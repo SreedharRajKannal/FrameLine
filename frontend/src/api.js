@@ -58,6 +58,16 @@ export async function importTranscript(file) {
   return r.json()
 }
 
+export async function updateMeetingTitle(meetingId, title) {
+  const r = await fetch(`${API}/meetings/${meetingId}/title`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
 export async function fetchMeetilyStatus() {
   const r = await fetch(`${API}/meetily/status`)
   if (!r.ok) throw new Error(`${r.status}`)

@@ -180,13 +180,36 @@ async def import_meeting(
         raise HTTPException(status_code=400, detail=f"Failed to parse transcript: {e}")
 
     # Store transcript
-    store.save_transcript(transcript)
+    store.save_transcript(transcript, status="processing")
 
     # Run pipeline in background
     def _process():
         import logging
+        import os
+        from backend.app.llm import call_llm
         _log = logging.getLogger(__name__)
         try:
+            # Generate title if missing
+            if not transcript.title or transcript.title == "Untitled":
+                text = " ".join([s.text for s in transcript.segments[:20]])
+                if text.strip() and os.getenv("MOCK_LLM", "0") == "0":
+                    sys_prompt = (
+                        "You are an AI that generates a very short, concise title for a meeting transcript. "
+                        "Rules:\n"
+                        "1. MUST be under 50 characters.\n"
+                        "2. ONLY output the title, no quotes, no extra text, no explanations.\n"
+                        "3. Do not invent details not present in the text (No hallucinations).\n"
+                        "4. If you cannot determine a title, output exactly 'Untitled Meeting'."
+                    )
+                    prompt = f"Generate a title based on this conversation snippet:\n{text}"
+                    try:
+                        title = call_llm(prompt, system=sys_prompt, json_mode=False)
+                        title = title.strip(' "\'')
+                        if title and len(title) <= 60:
+                            store.update_meeting_title(transcript.meeting_id, title)
+                    except Exception as e:
+                        _log.error("Failed to generate title: %s", e)
+
             settings = store.get_settings(transcript.meeting_id)
             items = process_transcript(transcript, settings)
             _log.info("Pipeline produced %d items for %s", len(items), transcript.meeting_id)
@@ -195,8 +218,11 @@ async def import_meeting(
                 _log.info("Saved %d items for %s", len(items), transcript.meeting_id)
             else:
                 _log.warning("Pipeline returned 0 items for %s", transcript.meeting_id)
+                
+            store.update_meeting_status(transcript.meeting_id, "completed")
         except Exception as exc:
             _log.exception("Background _process failed for %s: %s", transcript.meeting_id, exc)
+            store.update_meeting_status(transcript.meeting_id, "failed")
 
     background_tasks.add_task(_process)
 

@@ -38,13 +38,12 @@ _OVERLAP_CHARS = 300
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 _SYSTEM = """\
-You are an assistant that extracts ALL client feedback from a video-review call transcript.
-You will be given transcript segments. Find EVERY moment where the CLIENT gives feedback.
+You are an assistant that extracts ALL client feedback from a video-review call transcript snippet.
+You will be given a short exchange. Find EVERY moment where the CLIENT gives feedback.
 
 Rules:
 - IGNORE small talk, greetings, pleasantries, and scheduling.
 - IGNORE remarks by EDITOR_SPEAKERS — they are the editor, not the client.
-- Extract ALL feedback items, not just one.
 - For each feedback moment, create an object with these fields:
   {
     "quote": "<verbatim client words>",
@@ -62,13 +61,20 @@ Rules:
 - "is_global" = true only if note applies to entire video.
 - "type" = "approval" when client is happy and wants no change.
 
-OUTPUT: Return a JSON array. Example with 3 items:
-[
-  {"quote":"move title earlier","note":"Move title card 10 seconds earlier","type":"change","category":"edit","priority":"high","is_global":false,"withdrawn":false,"confidence":0.95,"segment_start_sec":30.0,"speaker":"Client"},
-  {"quote":"music is too loud","note":"Lower music volume at 1:30","type":"change","category":"sound","priority":"high","is_global":false,"withdrawn":false,"confidence":0.9,"segment_start_sec":75.0,"speaker":"Client"},
-  {"quote":"Really good work","note":"Client approves the overall edit","type":"approval","category":"other","priority":"low","is_global":true,"withdrawn":false,"confidence":0.95,"segment_start_sec":421.0,"speaker":"Client"}
-]
-Return ONLY the JSON array. No text, no markdown.
+OUTPUT: Return a JSON object with an "items" array. 
+If there is feedback, return it like this:
+{
+  "items": [
+    {"quote":"music is too loud","note":"Lower music volume at 1:30","type":"change","category":"sound","priority":"high","is_global":false,"withdrawn":false,"confidence":0.9,"segment_start_sec":75.0,"speaker":"Client"}
+  ]
+}
+
+CRITICAL: If there is NO feedback in the snippet (e.g. just greetings or small talk), you MUST output exactly:
+{
+  "items": []
+}
+
+Return ONLY valid JSON. No text, no markdown.
 """
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -130,39 +136,69 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
 
 def _chunk_transcript(t: Transcript) -> list[list[Segment]]:
     """
-    Split transcript.segments into chunks of ~_CHUNK_CHARS characters
-    with _OVERLAP_CHARS overlap, measured by JSON serialised segment length.
-    If the whole transcript fits in one chunk, returns a single-element list.
+    Chunk by conversational turns instead of fixed character length.
+    A chunk consists of a sequence of segments. We want to break the transcript 
+    such that each chunk contains at least one non-editor (client) segment, 
+    along with the preceding editor segments for context.
+    
+    This helps small 3B models extract perfectly because they only need to 
+    evaluate a single exchange at a time.
     """
+    editor_speakers = set(s.strip().lower() for s in config.EDITOR_SPEAKERS)
+    
     chunks: list[list[Segment]] = []
-    current: list[Segment] = []
-    current_len = 0
-
+    current_chunk: list[Segment] = []
+    has_client = False
+    
     for seg in t.segments:
-        seg_json = seg.model_dump_json()
-        seg_len = len(seg_json)
+        is_editor = bool(seg.speaker and seg.speaker.lower() in editor_speakers)
+        
+        # If we already have client text in the current chunk, and now the editor is speaking,
+        # it means the client's turn is over. Save the current chunk and start a new one.
+        # Alternatively, if the current chunk is getting massively long (e.g. client is monologuing),
+        # force a break so the LLM doesn't get overwhelmed.
+        current_len = sum(len(s.text) for s in current_chunk)
+        
+        if (is_editor and has_client) or current_len > 1000:
+            chunks.append(current_chunk)
+            current_chunk = []
+            has_client = False
+            
+        current_chunk.append(seg)
+        if not is_editor:
+            has_client = True
+            
+    if current_chunk and has_client:
+        chunks.append(current_chunk)
+        
+    if not chunks and current_chunk:
+        chunks.append(current_chunk)
+        
+    # Group VERY small chunks together (e.g. rapid back and forth under 300 chars)
+    # Target chunk size: at least 300 chars, max ~1000 chars.
+    merged_chunks = []
+    temp_chunk = []
+    temp_len = 0
+    
+    for c in chunks:
+        clen = sum(len(s.text) for s in c)
+        if temp_len > 0 and temp_len + clen > 1000:
+            merged_chunks.append(temp_chunk)
+            temp_chunk = list(c)
+            temp_len = clen
+        else:
+            temp_chunk.extend(c)
+            temp_len += clen
+            # Flush if we hit a minimum viable size so the LLM doesn't get confused by multi-topic chunks
+            if temp_len > 300:
+                merged_chunks.append(temp_chunk)
+                temp_chunk = []
+                temp_len = 0
 
-        if current_len + seg_len > _CHUNK_CHARS and current:
-            chunks.append(current)
-            # Keep last few segments as overlap
-            overlap: list[Segment] = []
-            overlap_len = 0
-            for s in reversed(current):
-                slen = len(s.model_dump_json())
-                if overlap_len + slen > _OVERLAP_CHARS:
-                    break
-                overlap.insert(0, s)
-                overlap_len += slen
-            current = overlap
-            current_len = overlap_len
+    if temp_chunk:
+        merged_chunks.append(temp_chunk)
 
-        current.append(seg)
-        current_len += seg_len
-
-    if current:
-        chunks.append(current)
-
-    return chunks or [[]]
+    return merged_chunks or [[]]
 
 
 def _build_prompt(segments: list[Segment], meeting_id: str) -> str:

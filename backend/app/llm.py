@@ -117,7 +117,7 @@ def call_llm_json(prompt: str, system: str = "") -> list | dict:
     # ── Attempt 2 – "fix your JSON" follow-up ────────────────────────────────
     fix_prompt = (
         "Your previous response was not valid JSON. "
-        "Return ONLY the corrected JSON array with no extra text, markdown, or explanation.\n\n"
+        "Return ONLY the corrected JSON object with no extra text, markdown, or explanation.\n\n"
         f"Bad response:\n{raw}"
     )
     raw2 = _call_ollama(fix_prompt, system="", json_mode=True)
@@ -140,6 +140,8 @@ def _normalize_result(result):
     if isinstance(result, list):
         return result
     if isinstance(result, dict):
+        if not result:
+            return []
         # Check if the dict wraps a list under a known key
         for key in ("feedback", "items", "results", "data"):
             if key in result and isinstance(result[key], list):
