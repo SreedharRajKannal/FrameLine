@@ -151,8 +151,14 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35, Sreedhar: store.py uses absolute imports (`backend.app.*`) so the package works from the repo root with `python -m` or pytest.
 - 2026-10-02 16:35, Sreedhar: pipeline.py MOCK_LLM path resolves samples/ relative to the file's location so it works from any cwd.
 - 2026-10-02 16:35, Sreedhar: teammate router imports in main.py are guarded by try/except ImportError so the app starts even when stubs have no routes yet.
+- 2026-10-02 17:05, Karthik: meetily_client.py normalizes segment field names defensively (tries start_sec, start, start_time, start_ms) since we cannot verify TranscriptSegmentDto shape without live openapi.json.
+- 2026-10-02 17:05, Karthik: processed_events dedup table shares the same DB_PATH as the main store (not a separate file) to keep things simple.
+- 2026-10-02 17:05, Karthik: EDL marker comment format is `|C:ResolveColor<Color> |M:<note> |D:1` based on community docs — needs verification against a real Resolve export.
 
 ## 12. Open questions / blockers (append only: `name: question`)
+- Karthik: Need to enable Meetily Pro Automation API to save live openapi.json and fetch a real transcript. Steps: open Meetily Pro > Settings > PRO > Integrations > Turn on > Create key (Read scope) > Allow the key.
+- Karthik: Need a real DaVinci Resolve marker EDL export to verify our EDL format. Can you export one? (File > Export AAF/XML/EDL > EDL with markers)
+- Karthik: The webhook background task (handle_summary_completed) calls meetily_client.get_transcript which will fail if Meetily isn't running. For demo with MOCK_LLM=1, use the /api/meetings/import endpoint instead.
 
 ## 13. How to run
 
