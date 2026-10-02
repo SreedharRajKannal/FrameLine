@@ -310,7 +310,7 @@ function SettingsPanel({ meetingId, settings, onSaved, toast }) {
 // ─────────────────────────────────────────────────────────
 // Meeting page
 // ─────────────────────────────────────────────────────────
-function MeetingPage({ meetingId, toast }) {
+function MeetingPage({ meetingId, toast, onNotFound }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -325,7 +325,14 @@ function MeetingPage({ meetingId, toast }) {
     setSelectedItem(null)
     fetchMeeting(meetingId)
       .then(d => setData(d))
-      .catch(e => toast(`Failed to load meeting: ${e.message}`, 'error'))
+      .catch(e => {
+        if (e.message.includes('404')) {
+          toast('Meeting not found (it may have been deleted)', 'error')
+          if (onNotFound) onNotFound()
+        } else {
+          toast(`Failed to load meeting: ${e.message}`, 'error')
+        }
+      })
       .finally(() => setLoading(false))
   }, [meetingId])
 
@@ -628,7 +635,9 @@ export default function App() {
     <div className="app-layout">
       {/* Top bar */}
       <div className="topbar">
-        <div className="topbar-logo">Frame<span>line</span></div>
+        <div className="topbar-logo" style={{ cursor: 'pointer' }} onClick={() => setActiveMeetingId(null)}>
+          Frame<span>line</span>
+        </div>
         <div className="topbar-spacer" />
         <div className="topbar-offline-banner">
           <StatusDot status={statusOk ? 'ok' : 'err'} />
@@ -642,7 +651,12 @@ export default function App() {
 
         <div className="content-area">
           {activeMeetingId ? (
-            <MeetingPage key={activeMeetingId} meetingId={activeMeetingId} toast={toast} />
+            <MeetingPage 
+              key={activeMeetingId} 
+              meetingId={activeMeetingId} 
+              toast={toast} 
+              onNotFound={() => setActiveMeetingId(null)}
+            />
           ) : (
             <div className="welcome">
               <div className="welcome-icon">🎬</div>
