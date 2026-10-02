@@ -1,0 +1,57 @@
+{
+  "_note": "This is a reconstructed sample based on Meetily API docs TranscriptResponse schema. Replace with a real GET /v1/meetings/{id}/transcript response when the API is available.",
+  "_meetily_api_route": "GET /v1/meetings/{id}/transcript",
+  "_schema": "TranscriptResponse with TranscriptSegmentDto[]",
+  "meeting_id": "sample-meeting-abc123",
+  "title": "Brand Film v3 Client Review",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 8.5,
+      "speaker": "Host",
+      "text": "Alright, let's go through the latest cut together. I'll play from the top."
+    },
+    {
+      "start": 120.0,
+      "end": 131.0,
+      "speaker": "Client",
+      "text": "The colour grade feels way too warm in the opening scene. It's not matching the brand."
+    },
+    {
+      "start": 135.0,
+      "end": 140.0,
+      "speaker": "Host",
+      "text": "Got it. We can cool that down. Anything else in the opening?"
+    },
+    {
+      "start": 240.0,
+      "end": 252.0,
+      "speaker": "Client",
+      "text": "Can we move the lower third at around one minute fifteen to after the cut? It's overlapping the face."
+    },
+    {
+      "start": 306.0,
+      "end": 318.0,
+      "speaker": "Client",
+      "text": "The music feels a bit loud overall. Hard to hear the VO."
+    },
+    {
+      "start": 415.0,
+      "end": 424.0,
+      "speaker": "Client",
+      "text": "Do we have the rights cleared for the background track?"
+    },
+    {
+      "start": 509.0,
+      "end": 520.0,
+      "speaker": "Client",
+      "text": "The pacing in the second half is perfect, I love it."
+    },
+    {
+      "start": 595.0,
+      "end": 604.0,
+      "speaker": "Client",
+      "text": "Actually forget what I said about the transition, it's fine."
+    }
+  ]
+}
