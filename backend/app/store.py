@@ -118,12 +118,17 @@ def save_items(meeting_id: str, items: list[FeedbackItem]) -> None:
     """Replace all items for a meeting (full overwrite)."""
     with _get_conn() as conn:
         conn.execute("DELETE FROM items WHERE meeting_id = ?", (meeting_id,))
+        records = []
+        for item in items:
+            # If item came from a mock/template with a different meeting_id, scope it to this meeting
+            if item.meeting_id != meeting_id:
+                scoped_id = f"{meeting_id}-{item.id}"
+                item = item.model_copy(update={"id": scoped_id, "meeting_id": meeting_id})
+            records.append((item.id, meeting_id, item.status, item.model_dump_json()))
+
         conn.executemany(
-            "INSERT INTO items (id, meeting_id, status, data) VALUES (?, ?, ?, ?)",
-            [
-                (item.id, meeting_id, item.status, item.model_dump_json())
-                for item in items
-            ],
+            "INSERT OR REPLACE INTO items (id, meeting_id, status, data) VALUES (?, ?, ?, ?)",
+            records,
         )
 
 

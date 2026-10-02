@@ -127,11 +127,24 @@ def test_put_settings_meeting_not_found():
 # Reanchor / Reprocess – 503 because stubs raise NotImplementedError
 # ---------------------------------------------------------------------------
 
-def test_reanchor_returns_503_when_not_implemented():
+def test_reanchor_success():
     mid = _seed_meeting("reanchor-mtg")
     r = client.post(f"/api/meetings/{mid}/reanchor")
-    # Anchoring stub raises NotImplementedError → 503
-    assert r.status_code == 503
+    assert r.status_code == 200
+    assert "reanchored" in r.json()
+
+
+def test_reanchor_not_found():
+    r = client.post("/api/meetings/no-such-mtg/reanchor")
+    assert r.status_code == 404
+
+
+def test_reanchor_empty_items_returns_zero():
+    t = Transcript(meeting_id="empty-mtg", title="Empty Meeting", segments=[])
+    store.save_transcript(t)
+    r = client.post("/api/meetings/empty-mtg/reanchor")
+    assert r.status_code == 200
+    assert r.json() == {"reanchored": 0}
 
 
 def test_reprocess_meeting_not_found():
