@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
   postReanchor, importTranscript, fetchMeetilyStatus,
-  exportEdlUrl, exportCsvUrl
+  exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
 
@@ -310,7 +310,7 @@ function SettingsPanel({ meetingId, settings, onSaved, toast }) {
 // ─────────────────────────────────────────────────────────
 // Meeting page
 // ─────────────────────────────────────────────────────────
-function MeetingPage({ meetingId, toast }) {
+function MeetingPage({ meetingId, toast, onNotFound }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -325,7 +325,14 @@ function MeetingPage({ meetingId, toast }) {
     setSelectedItem(null)
     fetchMeeting(meetingId)
       .then(d => setData(d))
-      .catch(e => toast(`Failed to load meeting: ${e.message}`, 'error'))
+      .catch(e => {
+        if (e.message.includes('404')) {
+          toast('Meeting not found (it may have been deleted)', 'error')
+          if (onNotFound) onNotFound()
+        } else {
+          toast(`Failed to load meeting: ${e.message}`, 'error')
+        }
+      })
       .finally(() => setLoading(false))
   }, [meetingId])
 
@@ -570,6 +577,33 @@ function Sidebar({ activeMeetingId, onSelect, toast }) {
     }
   }
 
+  const handleDelete = async (e, id) => {
+    e.stopPropagation()
+    if (!confirm('Are you sure you want to delete this meeting?')) return
+    try {
+      await deleteMeeting(id)
+      toast('Meeting deleted', 'success')
+      if (activeMeetingId === id) onSelect(null)
+      load()
+    } catch (err) {
+      toast(`Delete failed: ${err.message}`, 'error')
+    }
+  }
+
+  const handleRename = async (e, m) => {
+    e.stopPropagation()
+    const newTitle = prompt('Enter new title:', m.title || '')
+    if (newTitle !== null && newTitle.trim() !== '' && newTitle !== m.title) {
+      try {
+        await updateMeetingTitle(m.meeting_id, newTitle.trim())
+        toast('Title updated', 'success')
+        load()
+      } catch (err) {
+        toast(`Rename failed: ${err.message}`, 'error')
+      }
+    }
+  }
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -594,10 +628,33 @@ function Sidebar({ activeMeetingId, onSelect, toast }) {
               className={`meeting-item ${activeMeetingId === m.meeting_id ? 'active' : ''}`}
               onClick={() => onSelect(m.meeting_id)}
             >
-              <div className="meeting-item-title">{m.title || '(untitled)'}</div>
-              <div className="meeting-item-id">{m.meeting_id}</div>
+              <div className="meeting-item-info">
+                <div className="meeting-item-title">
+                  {m.title || '(untitled)'}
+                  {m.status === 'processing' && <span style={{ marginLeft: 5, fontSize: '0.8em', color: '#ffb86c' }}>(processing...)</span>}
+                </div>
+                <div className="meeting-item-id">{m.meeting_id}</div>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <button 
+                  className="btn-icon" 
+                  onClick={(e) => handleRename(e, m)}
+                  title="Rename meeting"
+                  style={{ marginRight: 5 }}
+                >
+                  ✎
+                </button>
+                <button 
+                  className="btn-icon delete-btn" 
+                  onClick={(e) => handleDelete(e, m.meeting_id)}
+                  title="Delete meeting"
+                >
+                  🗑
+                </button>
+              </div>
             </div>
           ))
+
         )}
       </div>
 
@@ -628,7 +685,9 @@ export default function App() {
     <div className="app-layout">
       {/* Top bar */}
       <div className="topbar">
-        <div className="topbar-logo">Frame<span>line</span></div>
+        <div className="topbar-logo" style={{ cursor: 'pointer' }} onClick={() => setActiveMeetingId(null)}>
+          Frame<span>line</span>
+        </div>
         <div className="topbar-spacer" />
         <div className="topbar-offline-banner">
           <StatusDot status={statusOk ? 'ok' : 'err'} />
@@ -642,7 +701,12 @@ export default function App() {
 
         <div className="content-area">
           {activeMeetingId ? (
-            <MeetingPage key={activeMeetingId} meetingId={activeMeetingId} toast={toast} />
+            <MeetingPage 
+              key={activeMeetingId} 
+              meetingId={activeMeetingId} 
+              toast={toast} 
+              onNotFound={() => setActiveMeetingId(null)}
+            />
           ) : (
             <div className="welcome">
               <div className="welcome-icon">🎬</div>

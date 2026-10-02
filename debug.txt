@@ -1,0 +1,6 @@
+SUCCESS chunk: <class 'dict'> len=10
+SUCCESS chunk: <class 'dict'> len=10
+DICT keys: ['quote', 'note', 'type', 'category', 'priority', 'is_global', 'withdrawn', 'confidence', 'segment_start_sec', 'speaker']
+SUCCESS chunk: <class 'dict'>
+DICT keys: ['quote', 'note', 'type', 'category', 'priority', 'is_global', 'withdrawn', 'confidence', 'segment_start_sec', 'speaker']
+SUCCESS chunk: <class 'dict'>

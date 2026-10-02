@@ -19,6 +19,9 @@ from backend.app.models import FeedbackItem, ProjectSettings
 
 router = APIRouter(tags=["review"])
 
+class TitleUpdate(BaseModel):
+    title: str
+
 
 # ---------------------------------------------------------------------------
 # Health
@@ -53,6 +56,40 @@ def get_meeting(meeting_id: str) -> dict:
         "items": [i.model_dump() for i in items],
         "settings": settings.model_dump(),
     }
+
+
+@router.delete("/meetings/{meeting_id}")
+def delete_meeting(meeting_id: str) -> dict:
+    """Delete a meeting and all its data."""
+    if store.get_transcript(meeting_id) is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    store.delete_meeting(meeting_id)
+    return {"status": "ok"}
+
+
+@router.put("/meetings/{meeting_id}/title")
+def update_meeting_title_endpoint(meeting_id: str, payload: TitleUpdate) -> dict:
+    """Update a meeting's title."""
+    transcript = store.get_transcript(meeting_id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    import json
+    import sqlite3
+    from backend.app import config
+    
+    # We also update the title in the raw_json of the transcript
+    raw_dict = json.loads(transcript.model_dump_json())
+    raw_dict["title"] = payload.title
+    
+    with sqlite3.connect(config.DB_PATH) as conn:
+        conn.execute(
+            "UPDATE meetings SET title = ?, raw_json = ? WHERE meeting_id = ?", 
+            (payload.title, json.dumps(raw_dict), meeting_id)
+        )
+        conn.commit()
+    
+    return {"status": "ok", "title": payload.title}
 
 
 # ---------------------------------------------------------------------------
@@ -97,9 +134,14 @@ def reanchor(meeting_id: str) -> dict:
     except ImportError:
         raise HTTPException(status_code=503, detail="anchoring module not yet available")
 
+    transcript = store.get_transcript(meeting_id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
     items = store.get_items(meeting_id)
     if not items:
-        raise HTTPException(status_code=404, detail="Meeting not found or has no items")
+        return {"reanchored": 0}
+
     settings = store.get_settings(meeting_id)
 
     try:

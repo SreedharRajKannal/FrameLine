@@ -126,6 +126,7 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 ### Sreedhar
 - 2026-10-02 16:35 ✅ STEP 1 DONE: repo skeleton, CLAUDE.md, AGENTS.md, .gitignore, .env.example, models.py, config.py, store.py, main.py, all teammate stubs (meetily_client, ingest, llm, extraction, anchoring, pipeline, redaction, routers/ingest, routers/export, routers/privacy, exporters/*), requirements.txt, samples/expected_items.json, samples/sample_transcript.json
 - 2026-10-02 16:35 ✅ STEP 2 DONE: routers/review.py (health, meetings CRUD, PATCH item, PUT settings, POST reanchor, POST reprocess), backend/tests/test_store.py, backend/tests/test_review.py
+- 2026-10-02 19:25 ✅ WEBHOOK SETUP: Identified Meetily private IP restriction (HTTP 400). Registered public tunnel destination with Meetily API (201 Created). Auto-update script for .env created. All 79 backend tests passing.
 ### Karthik
 - 2026-10-02 17:00 ✅ PRE-WORK: Read all Meetily docs (authentication, webhooks-and-sse, api-reference, events, enable-and-connect). Key findings:
   - Signature headers: `X-Meetily-Signature: sha256=<hex HMAC-SHA256>`, `X-Meetily-Timestamp: <unix_seconds>`

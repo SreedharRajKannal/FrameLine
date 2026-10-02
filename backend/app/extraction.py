@@ -32,37 +32,49 @@ from backend.app.models import FeedbackItem, Segment, Transcript
 logger = logging.getLogger(__name__)
 
 # ── Chunking constants ────────────────────────────────────────────────────────
-_CHUNK_CHARS = 6_000
-_OVERLAP_CHARS = 500
+# Smaller chunks = more LLM calls, but 3B models extract better from small windows
+_CHUNK_CHARS = 1_500
+_OVERLAP_CHARS = 300
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 _SYSTEM = """\
-You are an assistant that extracts client feedback from a video-review call transcript.
-You will be given a JSON array of transcript segments. Your job is to find every moment \
-where the CLIENT gives feedback about a video edit.
+You are an assistant that extracts ALL client feedback from a video-review call transcript snippet.
+You will be given a short exchange. Find EVERY moment where the CLIENT gives feedback.
 
 Rules:
 - IGNORE small talk, greetings, pleasantries, and scheduling.
-- IGNORE remarks made by speakers listed as EDITOR_SPEAKERS — those are the editor, not the client.
-- For each feedback moment return a JSON object with EXACTLY these fields:
+- IGNORE remarks by EDITOR_SPEAKERS — they are the editor, not the client.
+- For each feedback moment, create an object with these fields:
   {
-    "quote":      "<verbatim client words, as short as possible>",
-    "note":       "<one-sentence actionable instruction for the editor>",
-    "type":       "change" | "question" | "approval",
-    "category":   "color" | "sound" | "pacing" | "text_graphics" | "edit" | "other",
-    "priority":   "high" | "medium" | "low",
-    "is_global":  true | false,
-    "withdrawn":  true | false,
+    "quote": "<verbatim client words>",
+    "note": "<actionable instruction for editor>",
+    "type": "change" | "question" | "approval",
+    "category": "color" | "sound" | "pacing" | "text_graphics" | "edit" | "other",
+    "priority": "high" | "medium" | "low",
+    "is_global": true | false,
+    "withdrawn": true | false,
     "confidence": <0.0-1.0>,
-    "segment_start_sec": <float from the matching segment's start_sec>,
+    "segment_start_sec": <float>,
     "speaker": "<speaker label>"
   }
-- "withdrawn" must be true if the client explicitly retracts the comment \
-  (e.g. "actually never mind", "ignore that", "that's fine", "forget what I said").
-- "is_global" must be true only when the note applies to the entire video, \
-  not a specific moment (e.g. "make the whole thing warmer").
-- "type" is "approval" when the client is happy with something and wants no change.
-- Return ONLY a JSON array of these objects. No extra text, no markdown fences.
+- "withdrawn" = true if client retracts (e.g. "ignore that", "never mind").
+- "is_global" = true only if note applies to entire video.
+- "type" = "approval" when client is happy and wants no change.
+
+OUTPUT: Return a JSON object with an "items" array. 
+If there is feedback, return it like this:
+{
+  "items": [
+    {"quote":"music is too loud","note":"Lower music volume at 1:30","type":"change","category":"sound","priority":"high","is_global":false,"withdrawn":false,"confidence":0.9,"segment_start_sec":75.0,"speaker":"Client"}
+  ]
+}
+
+CRITICAL: If there is NO feedback in the snippet (e.g. just greetings or small talk), you MUST output exactly:
+{
+  "items": []
+}
+
+Return ONLY valid JSON. No text, no markdown.
 """
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -70,9 +82,6 @@ Rules:
 def extract_feedback(t: Transcript) -> list[FeedbackItem]:
     """
     Use the local LLM to extract client feedback items from a transcript.
-
-    When MOCK_LLM=1, delegates entirely to pipeline.py's mock path via
-    call_llm_json (which returns expected_items.json).
 
     Args:
         t: A fully populated Transcript.
@@ -91,21 +100,35 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
     chunks = _chunk_transcript(t)
     raw_items: list[dict[str, Any]] = []
 
-    for chunk_segs in chunks:
+    logger.info("Processing %d chunks for meeting %s", len(chunks), t.meeting_id)
+
+    for i, chunk_segs in enumerate(chunks):
         prompt = _build_prompt(chunk_segs, t.meeting_id)
         try:
             result = call_llm_json(prompt, system=_SYSTEM)
-        except RuntimeError as exc:
-            logger.error("LLM call failed for chunk: %s", exc)
+        except Exception as exc:
+            logger.error("LLM call failed for chunk %d: %s", i, exc)
             continue
 
         if isinstance(result, list):
+            logger.info("Chunk %d returned %d items", i, len(result))
             raw_items.extend(result)
+        elif isinstance(result, dict):
+            # Smaller models sometimes return a single object or wrap in a key
+            if "feedback" in result and isinstance(result["feedback"], list):
+                raw_items.extend(result["feedback"])
+            elif "items" in result and isinstance(result["items"], list):
+                raw_items.extend(result["items"])
+            else:
+                raw_items.append(result)
+            logger.info("Chunk %d returned dict (normalized)", i)
         else:
-            logger.warning("LLM returned a non-list for chunk; skipping. Got: %s", type(result))
+            logger.warning("LLM returned unexpected type for chunk %d: %s", i, type(result))
 
+    logger.info("Total raw items before validation: %d", len(raw_items))
     validated = _validate_items(raw_items, t.meeting_id)
     deduped = _deduplicate(validated)
+    logger.info("After validation: %d, after dedup: %d", len(validated), len(deduped))
     return deduped
 
 
@@ -113,39 +136,69 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
 
 def _chunk_transcript(t: Transcript) -> list[list[Segment]]:
     """
-    Split transcript.segments into chunks of ~_CHUNK_CHARS characters
-    with _OVERLAP_CHARS overlap, measured by JSON serialised segment length.
-    If the whole transcript fits in one chunk, returns a single-element list.
+    Chunk by conversational turns instead of fixed character length.
+    A chunk consists of a sequence of segments. We want to break the transcript 
+    such that each chunk contains at least one non-editor (client) segment, 
+    along with the preceding editor segments for context.
+    
+    This helps small 3B models extract perfectly because they only need to 
+    evaluate a single exchange at a time.
     """
+    editor_speakers = set(s.strip().lower() for s in config.EDITOR_SPEAKERS)
+    
     chunks: list[list[Segment]] = []
-    current: list[Segment] = []
-    current_len = 0
-
+    current_chunk: list[Segment] = []
+    has_client = False
+    
     for seg in t.segments:
-        seg_json = seg.model_dump_json()
-        seg_len = len(seg_json)
+        is_editor = bool(seg.speaker and seg.speaker.lower() in editor_speakers)
+        
+        # If we already have client text in the current chunk, and now the editor is speaking,
+        # it means the client's turn is over. Save the current chunk and start a new one.
+        # Alternatively, if the current chunk is getting massively long (e.g. client is monologuing),
+        # force a break so the LLM doesn't get overwhelmed.
+        current_len = sum(len(s.text) for s in current_chunk)
+        
+        if (is_editor and has_client) or current_len > 1000:
+            chunks.append(current_chunk)
+            current_chunk = []
+            has_client = False
+            
+        current_chunk.append(seg)
+        if not is_editor:
+            has_client = True
+            
+    if current_chunk and has_client:
+        chunks.append(current_chunk)
+        
+    if not chunks and current_chunk:
+        chunks.append(current_chunk)
+        
+    # Group VERY small chunks together (e.g. rapid back and forth under 300 chars)
+    # Target chunk size: at least 300 chars, max ~1000 chars.
+    merged_chunks = []
+    temp_chunk = []
+    temp_len = 0
+    
+    for c in chunks:
+        clen = sum(len(s.text) for s in c)
+        if temp_len > 0 and temp_len + clen > 1000:
+            merged_chunks.append(temp_chunk)
+            temp_chunk = list(c)
+            temp_len = clen
+        else:
+            temp_chunk.extend(c)
+            temp_len += clen
+            # Flush if we hit a minimum viable size so the LLM doesn't get confused by multi-topic chunks
+            if temp_len > 300:
+                merged_chunks.append(temp_chunk)
+                temp_chunk = []
+                temp_len = 0
 
-        if current_len + seg_len > _CHUNK_CHARS and current:
-            chunks.append(current)
-            # Keep last few segments as overlap
-            overlap: list[Segment] = []
-            overlap_len = 0
-            for s in reversed(current):
-                slen = len(s.model_dump_json())
-                if overlap_len + slen > _OVERLAP_CHARS:
-                    break
-                overlap.insert(0, s)
-                overlap_len += slen
-            current = overlap
-            current_len = overlap_len
+    if temp_chunk:
+        merged_chunks.append(temp_chunk)
 
-        current.append(seg)
-        current_len += seg_len
-
-    if current:
-        chunks.append(current)
-
-    return chunks or [[]]
+    return merged_chunks or [[]]
 
 
 def _build_prompt(segments: list[Segment], meeting_id: str) -> str:
@@ -158,7 +211,7 @@ def _build_prompt(segments: list[Segment], meeting_id: str) -> str:
     return (
         f"Meeting ID: {meeting_id}\n"
         f"EDITOR_SPEAKERS (ignore their remarks): {editor_labels}\n\n"
-        f"Transcript segments:\n{segs_json}"
+        f"Extract ALL client feedback from these segments:\n{segs_json}"
     )
 
 

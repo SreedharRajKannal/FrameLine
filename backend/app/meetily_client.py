@@ -99,27 +99,56 @@ def get_transcript(meeting_id: str) -> Transcript:
     )
 
 
+def _parse_time_val(val) -> float | None:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            return float(val)
+        except ValueError:
+            pass
+        parts = val.split(":")
+        try:
+            parts = [float(p) for p in parts]
+            if len(parts) == 3:
+                return parts[0] * 3600.0 + parts[1] * 60.0 + parts[2]
+            elif len(parts) == 2:
+                return parts[0] * 60.0 + parts[1]
+            elif len(parts) == 1:
+                return parts[0]
+        except ValueError:
+            pass
+    return None
+
+
 def _extract_start_sec(seg: dict) -> float:
     """Extract start time in seconds from a Meetily segment dict."""
-    # Try common field names
-    for key in ("start_sec", "start", "start_time", "start_ms", "timestamp"):
+    for key in ("audio_start_time", "start_sec", "start", "start_time", "start_ms", "timestamp"):
         val = seg.get(key)
         if val is not None:
-            # If key suggests milliseconds, convert
-            if "ms" in key:
-                return float(val) / 1000.0
-            return float(val)
+            parsed = _parse_time_val(val)
+            if parsed is not None:
+                if "ms" in key and isinstance(val, (int, float)):
+                    return parsed / 1000.0
+                return parsed
     return 0.0
 
 
 def _extract_end_sec(seg: dict) -> float | None:
     """Extract end time in seconds from a Meetily segment dict."""
-    for key in ("end_sec", "end", "end_time", "end_ms"):
+    for key in ("audio_end_time", "end_sec", "end", "end_time", "end_ms"):
         val = seg.get(key)
         if val is not None:
-            if "ms" in key:
-                return float(val) / 1000.0
-            return float(val)
+            parsed = _parse_time_val(val)
+            if parsed is not None:
+                if "ms" in key and isinstance(val, (int, float)):
+                    return parsed / 1000.0
+                return parsed
     return None
 
 

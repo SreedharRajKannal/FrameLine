@@ -911,3 +911,36 @@ input, textarea, select { font-family: inherit; }
   gap: 8px;
   flex-shrink: 0;
 }
+
+.meeting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.meeting-item-info {
+  flex-grow: 1;
+  overflow: hidden;
+}
+.meeting-item-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.delete-btn {
+  opacity: 0;
+  font-size: 14px;
+  color: #ff4d4f;
+  transition: opacity 0.2s;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+.meeting-item:hover .delete-btn {
+  opacity: 1;
+}
+.delete-btn:hover {
+  background: rgba(255, 77, 79, 0.1);
+  border-radius: 4px;
+}
+

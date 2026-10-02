@@ -18,21 +18,6 @@ from backend.app.models import FeedbackItem, ProjectSettings, Transcript
 def process_transcript(
     t: Transcript, settings: ProjectSettings
 ) -> list[FeedbackItem]:
-    """
-    Run the full pipeline: extract feedback items from the transcript, then
-    anchor each item to a video timecode using the project settings.
-
-    When the env var MOCK_LLM=1 this function loads items from
-    ``samples/expected_items.json`` (relative to the repo root) and returns
-    them immediately without calling the LLM or anchoring.
-
-    Args:
-        t:        A populated Transcript.
-        settings: Current ProjectSettings for this meeting.
-
-    Returns:
-        A list of fully populated FeedbackItems with anchor_sec set.
-    """
     # ── MOCK path ──────────────────────────────────────────────────────────
     if os.getenv("MOCK_LLM", "0") == "1":
         samples_path = (
@@ -40,7 +25,12 @@ def process_transcript(
         )
         if samples_path.exists():
             raw = json.loads(samples_path.read_text(encoding="utf-8"))
-            return [FeedbackItem.model_validate(item) for item in raw]
+            items = []
+            for item in raw:
+                fi = FeedbackItem.model_validate(item)
+                fi.id = f"{t.meeting_id}-{fi.id}"
+                items.append(fi)
+            return items
         # If file doesn't exist yet, return an empty list rather than crash
         return []
 
