@@ -79,15 +79,16 @@ def get_transcript(meeting_id: str) -> Transcript:
         pass  # Summary is optional
 
     # Normalize Meetily's segment shape into our Segment model.
-    # Meetily TranscriptSegmentDto fields (from docs): we don't know
-    # the exact field names from the live openapi.json yet, so we
-    # handle common shapes defensively.
+    # Real Meetily API fields (confirmed from live API):
+    #   audio_start_time, audio_end_time (seconds as float)
+    #   speaker: "mic" (local mic) or "system" (remote audio)
+    #   text, timestamp (wall-clock string), words[]
     segments = []
     for seg in data.get("segments", []):
         segments.append(Segment(
             start_sec=_extract_start_sec(seg),
             end_sec=_extract_end_sec(seg),
-            speaker=seg.get("speaker") or seg.get("speaker_label"),
+            speaker=_normalize_speaker(seg.get("speaker")),
             text=seg.get("text", ""),
         ))
 
@@ -99,27 +100,48 @@ def get_transcript(meeting_id: str) -> Transcript:
     )
 
 
+def _normalize_speaker(speaker: object) -> str | None:
+    """Normalize speaker field from Meetily segment."""
+    if not speaker:
+        return None
+    return str(speaker).strip()
+
+
 def _extract_start_sec(seg: dict) -> float:
     """Extract start time in seconds from a Meetily segment dict."""
-    # Try common field names
-    for key in ("start_sec", "start", "start_time", "start_ms", "timestamp"):
+    for key in ("audio_start_time", "start_sec", "start", "start_time", "start_ms"):
         val = seg.get(key)
         if val is not None:
-            # If key suggests milliseconds, convert
-            if "ms" in key:
-                return float(val) / 1000.0
-            return float(val)
+            try:
+                if "ms" in key:
+                    return float(val) / 1000.0
+                return float(val)
+            except (ValueError, TypeError):
+                continue
+    ts = seg.get("timestamp")
+    if ts and isinstance(ts, str):
+        parts = ts.split(":")
+        try:
+            if len(parts) == 3:
+                return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+            elif len(parts) == 2:
+                return float(parts[0]) * 60 + float(parts[1])
+        except (ValueError, TypeError):
+            pass
     return 0.0
 
 
 def _extract_end_sec(seg: dict) -> float | None:
     """Extract end time in seconds from a Meetily segment dict."""
-    for key in ("end_sec", "end", "end_time", "end_ms"):
+    for key in ("audio_end_time", "end_sec", "end", "end_time", "end_ms"):
         val = seg.get(key)
         if val is not None:
-            if "ms" in key:
-                return float(val) / 1000.0
-            return float(val)
+            try:
+                if "ms" in key:
+                    return float(val) / 1000.0
+                return float(val)
+            except (ValueError, TypeError):
+                continue
     return None
 
 

@@ -101,12 +101,40 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
 
         if isinstance(result, list):
             raw_items.extend(result)
+        elif isinstance(result, dict):
+            # Small models often wrap the array: {"items": [...]} or {"feedback": [...]}
+            unwrapped = _unwrap_dict(result)
+            if unwrapped is not None:
+                raw_items.extend(unwrapped)
+                logger.info("Unwrapped LLM dict (key found) — got %d items.", len(unwrapped))
+            else:
+                # Single-item dict with the item fields directly
+                raw_items.append(result)
+                logger.info("LLM returned a single dict item instead of array; treating as one item.")
         else:
-            logger.warning("LLM returned a non-list for chunk; skipping. Got: %s", type(result))
+            logger.warning("LLM returned unexpected type for chunk; skipping. Got: %s", type(result))
 
     validated = _validate_items(raw_items, t.meeting_id)
     deduped = _deduplicate(validated)
     return deduped
+
+
+# ── Dict unwrapping ──────────────────────────────────────────────────────────
+
+def _unwrap_dict(d: dict) -> list[dict] | None:
+    """
+    If the LLM returned {"items": [...]} or {"feedback": [...]}, extract the list.
+    Tries well-known keys first, then falls back to the first list-valued key.
+    Returns None if no list is found.
+    """
+    for key in ("items", "feedback", "results", "data", "feedback_items"):
+        if key in d and isinstance(d[key], list):
+            return d[key]
+    # Fallback: first value that is a list
+    for v in d.values():
+        if isinstance(v, list):
+            return v
+    return None
 
 
 # ── Chunking ──────────────────────────────────────────────────────────────────

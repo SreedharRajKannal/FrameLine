@@ -156,6 +156,8 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 17:12 ✅ backend/tests/test_sivapriyan.py: 30/30 tests pass (16 parser table tests, 6 anchor tests, MOCK smoke, eval recall/precision, 5 redaction tests)
 - 2026-10-02 17:23 ✅ git commit 8193ba7 (local; push blocked – see blocker below)
 - 2026-10-02 17:25 🚧 BLOCKER: Ollama crashes on start ("Unable to init instance: Unspecified error") – GPU driver issue, needs manual fix (see Open questions #1)
+- 2026-10-02 22:25 ✅ Ollama configured: pulled qwen2.5:1.5b (CPU-only, Q4_K_M, 986MB), set MOCK_LLM=0 in .env. All 3 services running: Ollama :11434, backend :8000, frontend :5173.
+- 2026-10-02 23:45 ✅ Real Meetily transcript integration verified: fixed timestamp parsing in meetily_client.py (audio_start_time/audio_end_time priority and defined _normalize_speaker), verified end-to-end ingestion and timecode anchoring (anchor_sec=100.0s) on live recorded meeting meeting-1790963247810.
 
 ## 11. Decisions log (append only: `YYYY-MM-DD HH:MM, name: decision`)
 - 2026-10-02 16:35, Sreedhar: store.py uses absolute imports (`backend.app.*`) so the package works from the repo root with `python -m` or pytest.

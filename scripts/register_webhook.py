@@ -4,9 +4,17 @@ Owned by Karthik.
 
 Usage:
     python -m scripts.register_webhook
+    python -m scripts.register_webhook --url https://abc123.loca.lt
 
-Registers http://127.0.0.1:8000/api/webhooks/meetily for the summary.completed event.
-Prints the hmac_secret (shown only once by Meetily – save it immediately to .env).
+Registers the receiver URL for the summary.completed event.
+By default uses http://127.0.0.1:8000/api/webhooks/meetily, but Meetily
+blocks loopback/private IPs so you must pass a public tunnel URL:
+
+    1. Run in a separate terminal:
+       npx localtunnel --port 8000
+       (or: ngrok http 8000)
+    2. Copy the public URL printed, then run:
+       python -m scripts.register_webhook --url https://<tunnel-id>.loca.lt
 
 Requires:
     MEETILY_BASE_URL and MEETILY_API_KEY in .env
@@ -14,6 +22,7 @@ Requires:
 After registration, you MUST approve the destination in Meetily:
     Settings > Integrations > Advanced > Destinations > Allow
 """
+import argparse
 import json
 import sys
 import os
@@ -28,6 +37,14 @@ import httpx
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Register Frameline webhook with Meetily")
+    parser.add_argument(
+        "--url",
+        help="Public receiver URL (e.g. https://abc123.loca.lt). "
+             "Meetily blocks 127.0.0.1/localhost so a tunnel is required.",
+    )
+    args = parser.parse_args()
+
     base_url = os.getenv("MEETILY_BASE_URL", "http://127.0.0.1:8420")
     api_key = os.getenv("MEETILY_API_KEY", "")
 
@@ -35,7 +52,14 @@ def main():
         print("ERROR: MEETILY_API_KEY not set in .env")
         sys.exit(1)
 
-    webhook_url = "http://127.0.0.1:8000/api/webhooks/meetily"
+    if args.url:
+        webhook_url = args.url.rstrip("/") + "/api/webhooks/meetily"
+    else:
+        webhook_url = "http://127.0.0.1:8000/api/webhooks/meetily"
+        print("[!] WARNING: No --url passed. Meetily will likely reject 127.0.0.1.")
+        print("    Run: npx localtunnel --port 8000")
+        print("    Then retry: python -m scripts.register_webhook --url https://<id>.loca.lt")
+        print()
 
     print(f"Registering webhook with Meetily at {base_url}")
     print(f"  Receiver URL: {webhook_url}")
