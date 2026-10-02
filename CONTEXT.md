@@ -124,15 +124,56 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 
 ## 10. Status board (each person edits ONLY their own section)
 ### Sreedhar
-- (nothing yet)
+- 2026-10-02 16:35 ✅ STEP 1 DONE: repo skeleton, CLAUDE.md, AGENTS.md, .gitignore, .env.example, models.py, config.py, store.py, main.py, all teammate stubs (meetily_client, ingest, llm, extraction, anchoring, pipeline, redaction, routers/ingest, routers/export, routers/privacy, exporters/*), requirements.txt, samples/expected_items.json, samples/sample_transcript.json
+- 2026-10-02 16:35 ✅ STEP 2 DONE: routers/review.py (health, meetings CRUD, PATCH item, PUT settings, POST reanchor, POST reprocess), backend/tests/test_store.py, backend/tests/test_review.py
 ### Karthik
 - (nothing yet)
 ### Sivapriyan
 - (nothing yet)
 
 ## 11. Decisions log (append only: `YYYY-MM-DD HH:MM, name: decision`)
+- 2026-10-02 16:35, Sreedhar: store.py uses absolute imports (`backend.app.*`) so the package works from the repo root with `python -m` or pytest.
+- 2026-10-02 16:35, Sreedhar: pipeline.py MOCK_LLM path resolves samples/ relative to the file's location so it works from any cwd.
+- 2026-10-02 16:35, Sreedhar: teammate router imports in main.py are guarded by try/except ImportError so the app starts even when stubs have no routes yet.
 
 ## 12. Open questions / blockers (append only: `name: question`)
 
 ## 13. How to run
-(Sreedhar keeps this current: install steps, env setup, start commands.)
+
+### Prerequisites
+- Python 3.11+
+- Node 18+
+- (Optional) Ollama running locally with `qwen2.5:7b` pulled
+
+### Install
+```bash
+# 1. Copy env and fill in secrets
+cp .env.example .env
+
+# 2. Backend
+cd backend
+pip install -r requirements.txt
+
+# 3. Frontend
+cd ../frontend
+npm install
+```
+
+### Start (dev)
+```bash
+# Terminal 1 – backend (from repo root)
+MOCK_LLM=1 uvicorn backend.app.main:app --reload --port 8000
+
+# Terminal 2 – frontend
+cd frontend && npm run dev
+```
+Open http://localhost:5173
+
+### Run tests
+```bash
+# From repo root
+pytest backend/tests/ -v
+```
+
+### Run with real Ollama
+Set `MOCK_LLM=0` in `.env` and ensure `ollama serve` is running.

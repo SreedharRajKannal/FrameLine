@@ -1,0 +1,64 @@
+"""
+main.py – FastAPI application entry-point.
+Owned by Sreedhar.
+
+Each teammate's router is imported inside try/except ImportError so that
+a missing or broken module never prevents the app from starting.
+"""
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.app import store
+
+app = FastAPI(title="Frameline API", version="0.1.0")
+
+# ---------------------------------------------------------------------------
+# CORS – allow the Vite dev server
+# ---------------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------------------------------------------
+# DB init on startup
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+def on_startup() -> None:
+    store.init_db()
+
+
+# ---------------------------------------------------------------------------
+# Sreedhar's router (always present)
+# ---------------------------------------------------------------------------
+from backend.app.routers import review  # noqa: E402
+app.include_router(review.router, prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# Karthik's routers (optional – won't crash if not yet implemented)
+# ---------------------------------------------------------------------------
+try:
+    from backend.app.routers import ingest
+    app.include_router(ingest.router, prefix="/api")
+except ImportError:
+    pass
+
+try:
+    from backend.app.routers import export as export_router
+    app.include_router(export_router.router, prefix="/api")
+except ImportError:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Sivapriyan's routers (optional)
+# ---------------------------------------------------------------------------
+try:
+    from backend.app.routers import privacy
+    app.include_router(privacy.router, prefix="/api")
+except ImportError:
+    pass
