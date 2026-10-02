@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from backend.app.anchoring import anchor_items
+from backend.app.extraction import extract_feedback
 from backend.app.models import FeedbackItem, ProjectSettings, Transcript
 
 
@@ -21,7 +23,7 @@ def process_transcript(
     anchor each item to a video timecode using the project settings.
 
     When the env var MOCK_LLM=1 this function loads items from
-    `samples/expected_items.json` (relative to the repo root) and returns
+    ``samples/expected_items.json`` (relative to the repo root) and returns
     them immediately without calling the LLM or anchoring.
 
     Args:
@@ -33,12 +35,15 @@ def process_transcript(
     """
     # ── MOCK path ──────────────────────────────────────────────────────────
     if os.getenv("MOCK_LLM", "0") == "1":
-        samples_path = Path(__file__).resolve().parents[2] / "samples" / "expected_items.json"
+        samples_path = (
+            Path(__file__).resolve().parents[2] / "samples" / "expected_items.json"
+        )
         if samples_path.exists():
             raw = json.loads(samples_path.read_text(encoding="utf-8"))
             return [FeedbackItem.model_validate(item) for item in raw]
         # If file doesn't exist yet, return an empty list rather than crash
         return []
 
-    # ── Real path (Sivapriyan implements this) ─────────────────────────────
-    raise NotImplementedError
+    # ── Real path ──────────────────────────────────────────────────────────
+    items = extract_feedback(t)
+    return anchor_items(items, settings)

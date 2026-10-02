@@ -1,0 +1,157 @@
+{
+  "meeting_id": "review-call-001",
+  "title": "GlowSkin 60s Promo – V1 Client Review",
+  "summary": "Client review call for the GlowSkin 60-second product promo video. Priya presents the cut, Rahul gives feedback.",
+  "segments": [
+    {
+      "start_sec": 0.0,
+      "end_sec": 12.5,
+      "speaker": "Priya",
+      "text": "Hi Rahul, thanks for jumping on. I've got the first cut of the GlowSkin sixty-second promo ready. I'll share my screen now."
+    },
+    {
+      "start_sec": 12.5,
+      "end_sec": 22.0,
+      "speaker": "Rahul",
+      "text": "Great, looking forward to it. How was your weekend by the way? Mine was busy, took the kids to the beach."
+    },
+    {
+      "start_sec": 22.0,
+      "end_sec": 30.0,
+      "speaker": "Priya",
+      "text": "It was good, relaxing! Alright, let's dive in. I'm playing from the top."
+    },
+    {
+      "start_sec": 30.0,
+      "end_sec": 55.0,
+      "speaker": "Rahul",
+      "text": "Okay I'm watching... Hmm, right there at around the thirty-second mark – the skin tone looks a bit off. It's slightly orange. Can you warm it up, or actually cool it down? It's too warm. The model's face looks unnatural."
+    },
+    {
+      "start_sec": 55.0,
+      "end_sec": 72.0,
+      "speaker": "Priya",
+      "text": "Got it, I'll pull down the orange on the skin. Continuing..."
+    },
+    {
+      "start_sec": 72.0,
+      "end_sec": 105.0,
+      "speaker": "Rahul",
+      "text": "Okay... oh I love that music drop right there! That's perfect timing. Keep that exactly as is. Now just after that, the text overlay with our website URL – it feels too small. I can barely read it on my laptop screen."
+    },
+    {
+      "start_sec": 105.0,
+      "end_sec": 118.0,
+      "speaker": "Priya",
+      "text": "I can bump up the font size on that lower third. That appears at one minute twenty-four, I'll make a note."
+    },
+    {
+      "start_sec": 118.0,
+      "end_sec": 155.0,
+      "speaker": "Rahul",
+      "text": "Yes please. And actually – make the whole thing warmer overall. The entire video feels a little cold and clinical. We're a skincare brand, it should feel warm and inviting, you know?"
+    },
+    {
+      "start_sec": 155.0,
+      "end_sec": 168.0,
+      "speaker": "Priya",
+      "text": "Understood, I'll push the global grade warmer. It's a fine balance though. Continuing to the middle section."
+    },
+    {
+      "start_sec": 168.0,
+      "end_sec": 210.0,
+      "speaker": "Rahul",
+      "text": "Okay... around the two-minute mark there's a cut that feels a bit abrupt. Like something's missing. Can we see the earlier take of that shot? The one we filmed before the lunch break? I think it might work better."
+    },
+    {
+      "start_sec": 210.0,
+      "end_sec": 228.0,
+      "speaker": "Priya",
+      "text": "Sure, I have the earlier take. I'll check if it's usable and cut it in. The pacing in this section is something I was unsure about too."
+    },
+    {
+      "start_sec": 228.0,
+      "end_sec": 260.0,
+      "speaker": "Rahul",
+      "text": "The pacing through the second half is honestly pretty good. I'd say leave that alone. But the voiceover in the last fifteen seconds – it feels rushed. Like there's too much copy for the time. Maybe cut one sentence from the script?"
+    },
+    {
+      "start_sec": 260.0,
+      "end_sec": 272.0,
+      "speaker": "Priya",
+      "text": "I agree, the last bit is dense. I'll tighten the VO. Shall I also check the music levels at the end?"
+    },
+    {
+      "start_sec": 272.0,
+      "end_sec": 305.0,
+      "speaker": "Rahul",
+      "text": "Yes actually – speaking of music, there's a moment somewhere in the middle, I can't pinpoint exactly where, but the music dips too suddenly. It's jarring. Can you smooth that out? Fade it more gradually."
+    },
+    {
+      "start_sec": 305.0,
+      "end_sec": 325.0,
+      "speaker": "Priya",
+      "text": "I think I know the spot, around the forty-second mark in the video. I'll smooth that crossfade."
+    },
+    {
+      "start_sec": 325.0,
+      "end_sec": 360.0,
+      "speaker": "Rahul",
+      "text": "Also – and this is small – the transition between the product shot and the lifestyle shot at one minute in feels a bit harsh. Like a hard cut where a dissolve might be nicer. Actually, never mind, that's fine, I think it works. Ignore that."
+    },
+    {
+      "start_sec": 360.0,
+      "end_sec": 378.0,
+      "speaker": "Priya",
+      "text": "Okay, ignoring the transition. Let me make a note of everything so far."
+    },
+    {
+      "start_sec": 378.0,
+      "end_sec": 415.0,
+      "speaker": "Rahul",
+      "text": "One more thing – the end card. It shows my email rahul.kapoor@glowskin.in and my phone number plus-91-98765-43210. Can we replace that with just the website? Also the price we paid for the shoot – fifteen thousand dollars – I don't want that visible anywhere in the deliverables."
+    },
+    {
+      "start_sec": 415.0,
+      "end_sec": 435.0,
+      "speaker": "Priya",
+      "text": "Absolutely, I'll swap out the contact details with just the website URL. Good catch."
+    },
+    {
+      "start_sec": 435.0,
+      "end_sec": 470.0,
+      "speaker": "Rahul",
+      "text": "Overall I think we're about eighty percent there. The brand feel just needs to come through more strongly. My CEO Rakesh Sharma is going to review the final cut before we approve it, so it needs to feel premium."
+    },
+    {
+      "start_sec": 470.0,
+      "end_sec": 495.0,
+      "speaker": "Priya",
+      "text": "Noted. I'll have V2 ready by Thursday. Is there anything else?"
+    },
+    {
+      "start_sec": 495.0,
+      "end_sec": 520.0,
+      "speaker": "Rahul",
+      "text": "No I think that covers it. Great work overall Priya, really. The opening twenty seconds are excellent, I wouldn't change a thing there."
+    },
+    {
+      "start_sec": 520.0,
+      "end_sec": 535.0,
+      "speaker": "Priya",
+      "text": "Thank you so much, Rahul. I'll get started on these revisions and send you a link to review V2 by Thursday."
+    },
+    {
+      "start_sec": 535.0,
+      "end_sec": 552.0,
+      "speaker": "Rahul",
+      "text": "Sounds good. Talk soon."
+    },
+    {
+      "start_sec": 552.0,
+      "end_sec": 560.0,
+      "speaker": "Priya",
+      "text": "Bye!"
+    }
+  ]
+}
