@@ -127,7 +127,23 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35 ✅ STEP 1 DONE: repo skeleton, CLAUDE.md, AGENTS.md, .gitignore, .env.example, models.py, config.py, store.py, main.py, all teammate stubs (meetily_client, ingest, llm, extraction, anchoring, pipeline, redaction, routers/ingest, routers/export, routers/privacy, exporters/*), requirements.txt, samples/expected_items.json, samples/sample_transcript.json
 - 2026-10-02 16:35 ✅ STEP 2 DONE: routers/review.py (health, meetings CRUD, PATCH item, PUT settings, POST reanchor, POST reprocess), backend/tests/test_store.py, backend/tests/test_review.py
 ### Karthik
-- (nothing yet)
+- 2026-10-02 17:00 ✅ PRE-WORK: Read all Meetily docs (authentication, webhooks-and-sse, api-reference, events, enable-and-connect). Key findings:
+  - Signature headers: `X-Meetily-Signature: sha256=<hex HMAC-SHA256>`, `X-Meetily-Timestamp: <unix_seconds>`
+  - HMAC computed over: `{timestamp}.{body}` (literal timestamp + dot + raw body bytes)
+  - `summary.completed` event is thin: `{schema_version, event_id, event, occurred_at, resource: {kind, id}, delivery_id}`. Use `resource.id` to fetch transcript.
+  - Webhook registration: `POST /v1/webhooks` with `{url, events, delivery_mode}` – requires Read scope. Returns `hmac_secret` shown only once.
+  - Destination approval: after registering, destination starts `pending`. Must approve in Meetily: Settings > Integrations > Advanced > Destinations > Allow.
+  - Transcript API: `GET /v1/meetings/{id}/transcript` returns `TranscriptResponse` with `meeting_id, title, segments[]`.
+  - ⚠️ Local Meetily API (127.0.0.1:8420) not running – cannot fetch live openapi.json yet. Need Karthik to enable it.
+- 2026-10-02 17:00 ✅ Saved `docs/sample_transcript_raw.json` (reconstructed from API docs schema – replace with real response when API available).
+- 2026-10-02 17:02 ✅ STEP 1: `meetily_client.py` – httpx client with Bearer auth, `list_meetings()`, `get_transcript(meeting_id)` normalizing Meetily TranscriptResponse into our Transcript/Segment models, `is_reachable()`, `list_webhooks()`, `register_webhook()`.
+- 2026-10-02 17:02 ✅ STEP 2: `ingest.py` – `handle_summary_completed(event)` full flow (fetch→store→pipeline→store items). `parse_uploaded_transcript()` handles our JSON, Meetily export JSON, Markdown, and timestamped plain text (`[HH:MM:SS] Speaker: text` and `HH:MM:SS Speaker: text`).
+- 2026-10-02 17:02 ✅ STEP 2: `routers/ingest.py` – POST /api/webhooks/meetily (HMAC verify, dedupe via processed_events SQLite table, background task), POST /api/meetings/import (multipart file upload), GET /api/meetily/status (API reachable + webhook registered + last event).
+- 2026-10-02 17:02 ✅ STEP 3: `scripts/register_webhook.py` (registers with Meetily, shows hmac_secret), `scripts/simulate_webhook.py` (sends correctly HMAC-signed fake summary.completed event).
+- 2026-10-02 17:02 ✅ STEP 4: `exporters/timecode.py` – seconds↔frames↔HH:MM:SS:FF, non-drop-frame, any fps, start TC offset. `exporters/edl.py` – CMX 3600 EDL with Resolve marker comments (`|C:ResolveColor<X> |M:<note> |D:1`). `exporters/csv_export.py` – columns: id, timecode, type, category, priority, note, quote, speaker, confidence, status, version.
+- 2026-10-02 17:02 ✅ STEP 4: `routers/export.py` – GET /api/meetings/{id}/export.edl and export.csv, approved+non-withdrawn only.
+- 2026-10-02 17:02 ✅ STEP 5: `backend/tests/test_karthik.py` – 28 tests all passing: timecode round trips (24/25/30 fps), EDL golden file, signature accept/reject, duplicate event ignored, transcript parser cases (JSON/Meetily/text/markdown), CSV export.
+- 2026-10-02 17:02 ⚠️ PENDING: Verify EDL format against real DaVinci Resolve export (need Karthik to export a marker EDL). Verify Meetily TranscriptSegmentDto field names against live openapi.json.
 ### Sivapriyan
 - 2026-10-02 17:08 ✅ samples/review_call_1.json: realistic 4-5 min GlowSkin review call (Priya=editor, Rahul=client), 25 segments, 12+ feedback moments, all required types present
 - 2026-10-02 17:08 ✅ samples/expected_items.json: replaced placeholder with 12 hand-crafted FeedbackItems for review_call_1 (all types, spoken TCs, global note, approval, withdrawal, PII)
@@ -145,9 +161,12 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35, Sreedhar: store.py uses absolute imports (`backend.app.*`) so the package works from the repo root with `python -m` or pytest.
 - 2026-10-02 16:35, Sreedhar: pipeline.py MOCK_LLM path resolves samples/ relative to the file's location so it works from any cwd.
 - 2026-10-02 16:35, Sreedhar: teammate router imports in main.py are guarded by try/except ImportError so the app starts even when stubs have no routes yet.
+- 2026-10-02 17:05, Karthik: meetily_client.py normalizes segment field names defensively (tries start_sec, start, start_time, start_ms) since we cannot verify TranscriptSegmentDto shape without live openapi.json.
+- 2026-10-02 17:05, Karthik: processed_events dedup table shares the same DB_PATH as the main store (not a separate file) to keep things simple.
+- 2026-10-02 17:05, Karthik: EDL marker comment format is `|C:ResolveColor<Color> |M:<note> |D:1` based on community docs — needs verification against a real Resolve export.
 
 ## 12. Open questions / blockers (append only: `name: question`)
-- Sivapriyan: Ollama crashes immediately on start with "Unable to init instance: Unspecified error" – likely GPU/CUDA driver conflict. Workaround: set OLLAMA_NO_GPU=1 in .env and restart Ollama manually from the system tray, OR run `set OLLAMA_NO_GPU=1 && ollama serve` in a terminal before starting the backend.
+
 ## 13. How to run
 
 ### Prerequisites
