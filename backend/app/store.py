@@ -110,6 +110,14 @@ def list_meetings() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def delete_meeting(meeting_id: str) -> None:
+    """Delete a meeting and all associated items/settings."""
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM settings WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM items WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
+
+
 # ---------------------------------------------------------------------------
 # Items
 # ---------------------------------------------------------------------------

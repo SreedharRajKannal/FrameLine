@@ -55,6 +55,15 @@ def get_meeting(meeting_id: str) -> dict:
     }
 
 
+@router.delete("/meetings/{meeting_id}")
+def delete_meeting(meeting_id: str) -> dict:
+    """Delete a meeting and all its data."""
+    if store.get_transcript(meeting_id) is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    store.delete_meeting(meeting_id)
+    return {"status": "ok"}
+
+
 # ---------------------------------------------------------------------------
 # Items
 # ---------------------------------------------------------------------------

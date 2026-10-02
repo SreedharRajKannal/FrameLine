@@ -12,6 +12,12 @@ export async function fetchMeeting(id) {
   return r.json()
 }
 
+export async function deleteMeeting(id) {
+  const r = await fetch(`${API}/meetings/${id}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
 export async function patchItem(id, patch) {
   const r = await fetch(`${API}/items/${id}`, {
     method: 'PATCH',

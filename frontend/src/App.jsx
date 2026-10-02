@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
   postReanchor, importTranscript, fetchMeetilyStatus,
-  exportEdlUrl, exportCsvUrl
+  exportEdlUrl, exportCsvUrl, deleteMeeting
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
 
@@ -577,6 +577,19 @@ function Sidebar({ activeMeetingId, onSelect, toast }) {
     }
   }
 
+  const handleDelete = async (e, id) => {
+    e.stopPropagation()
+    if (!confirm('Are you sure you want to delete this meeting?')) return
+    try {
+      await deleteMeeting(id)
+      toast('Meeting deleted', 'success')
+      if (activeMeetingId === id) onSelect(null)
+      load()
+    } catch (err) {
+      toast(`Delete failed: ${err.message}`, 'error')
+    }
+  }
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -601,8 +614,17 @@ function Sidebar({ activeMeetingId, onSelect, toast }) {
               className={`meeting-item ${activeMeetingId === m.meeting_id ? 'active' : ''}`}
               onClick={() => onSelect(m.meeting_id)}
             >
-              <div className="meeting-item-title">{m.title || '(untitled)'}</div>
-              <div className="meeting-item-id">{m.meeting_id}</div>
+              <div className="meeting-item-info">
+                <div className="meeting-item-title">{m.title || '(untitled)'}</div>
+                <div className="meeting-item-id">{m.meeting_id}</div>
+              </div>
+              <button 
+                className="btn-icon delete-btn" 
+                onClick={(e) => handleDelete(e, m.meeting_id)}
+                title="Delete meeting"
+              >
+                🗑
+              </button>
             </div>
           ))
         )}
