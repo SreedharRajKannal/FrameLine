@@ -8,7 +8,7 @@ a missing or broken module never prevents the app from starting.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app import store
+from backend.app import config, store
 
 app = FastAPI(title="Frameline API", version="0.1.0")
 
@@ -24,11 +24,29 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# DB init on startup
+# DB init on startup + Meetily poller
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 def on_startup() -> None:
     store.init_db()
+
+
+@app.on_event("startup")
+async def start_meetily_poller() -> None:
+    """Start the Meetily polling loop if Meetily is configured."""
+    if config.MEETILY_API_KEY:
+        from backend.app.meetily_poller import start_poller
+        start_poller()
+
+
+@app.on_event("shutdown")
+async def stop_meetily_poller() -> None:
+    """Gracefully stop the Meetily poller."""
+    try:
+        from backend.app.meetily_poller import stop_poller
+        stop_poller()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

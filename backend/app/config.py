@@ -23,6 +23,9 @@ MOCK_LLM: bool = os.getenv("MOCK_LLM", "0") == "1"
 # Storage
 DB_PATH: str = os.getenv("DB_PATH", "frameline.db")
 
+# Webhook configuration
+FRAMELINE_EXTERNAL_URL: str = os.getenv("FRAMELINE_EXTERNAL_URL", "http://127.0.0.1:8000")
+
 # Comma-separated list of speaker labels that are NOT the client
 EDITOR_SPEAKERS: list[str] = [
     s.strip()

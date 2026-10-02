@@ -30,12 +30,13 @@ import httpx
 def main():
     base_url = os.getenv("MEETILY_BASE_URL", "http://127.0.0.1:8420")
     api_key = os.getenv("MEETILY_API_KEY", "")
+    external_url = os.getenv("FRAMELINE_EXTERNAL_URL", "http://127.0.0.1:8000")
 
     if not api_key:
         print("ERROR: MEETILY_API_KEY not set in .env")
         sys.exit(1)
 
-    webhook_url = "http://127.0.0.1:8000/api/webhooks/meetily"
+    webhook_url = f"{external_url.rstrip('/')}/api/webhooks/meetily"
 
     print(f"Registering webhook with Meetily at {base_url}")
     print(f"  Receiver URL: {webhook_url}")
@@ -74,7 +75,24 @@ def main():
                     print(f"  MEETILY_WEBHOOK_SECRET={hmac_secret}")
                     print("=" * 60)
                     print()
-                    print("Add it to your .env file now.")
+                    # Auto-update .env file
+                    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+                    if os.path.exists(env_path):
+                        with open(env_path, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                        new_lines = []
+                        updated = False
+                        for line in lines:
+                            if line.startswith("MEETILY_WEBHOOK_SECRET="):
+                                new_lines.append(f"MEETILY_WEBHOOK_SECRET={hmac_secret}\n")
+                                updated = True
+                            else:
+                                new_lines.append(line)
+                        if not updated:
+                            new_lines.append(f"MEETILY_WEBHOOK_SECRET={hmac_secret}\n")
+                        with open(env_path, "w", encoding="utf-8") as f:
+                            f.writelines(new_lines)
+                        print("[OK] Automatically updated MEETILY_WEBHOOK_SECRET in .env!")
                 print()
                 print("NEXT STEP: Approve the destination in Meetily:")
                 print("  Settings > Integrations > Advanced > Destinations > Allow")

@@ -240,19 +240,27 @@ async def import_meeting(
 @router.get("/meetily/status")
 def meetily_status():
     """
-    Check whether the Meetily API is reachable and if a webhook is registered.
+    Check whether the Meetily API is reachable and report connection mode.
     """
     from backend.app import meetily_client
 
     reachable = meetily_client.is_reachable()
     webhook_registered = False
-    webhooks = []
+    poller_active = False
 
     if reachable:
+        # Check if the poller is running
+        try:
+            from backend.app.meetily_poller import _poller_task
+            poller_active = _poller_task is not None and not _poller_task.done()
+        except Exception:
+            pass
+
+        # Also check for webhooks (may work in some setups)
         try:
             webhooks = meetily_client.list_webhooks()
-            # Check if any webhook points to our receiver
-            our_url = "http://127.0.0.1:8000/api/webhooks/meetily"
+            from backend.app import config
+            our_url = f"{config.FRAMELINE_EXTERNAL_URL.rstrip('/')}/api/webhooks/meetily"
             for wh in (webhooks if isinstance(webhooks, list) else []):
                 if isinstance(wh, dict) and wh.get("url", "").rstrip("/") == our_url.rstrip("/"):
                     webhook_registered = True
@@ -263,9 +271,12 @@ def meetily_status():
     result = {
         "meetily_reachable": reachable,
         "webhook_registered": webhook_registered,
+        "poller_active": poller_active,
+        "mode": "poller" if poller_active else ("webhook" if webhook_registered else "disconnected"),
     }
 
     if _last_event_received:
         result["last_event"] = _last_event_received
 
     return result
+
