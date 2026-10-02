@@ -95,12 +95,21 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
         prompt = _build_prompt(chunk_segs, t.meeting_id)
         try:
             result = call_llm_json(prompt, system=_SYSTEM)
-        except RuntimeError as exc:
+        except Exception as exc:
             logger.error("LLM call failed for chunk: %s", exc)
             continue
 
         if isinstance(result, list):
             raw_items.extend(result)
+        elif isinstance(result, dict):
+            # The LLM returned a single object instead of an array
+            # Sometimes smaller models do this if they only found one item
+            if "feedback" in result and isinstance(result["feedback"], list):
+                raw_items.extend(result["feedback"])
+            elif "items" in result and isinstance(result["items"], list):
+                raw_items.extend(result["items"])
+            else:
+                raw_items.append(result)
         else:
             logger.warning("LLM returned a non-list for chunk; skipping. Got: %s", type(result))
 
