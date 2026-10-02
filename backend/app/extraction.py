@@ -32,42 +32,43 @@ from backend.app.models import FeedbackItem, Segment, Transcript
 logger = logging.getLogger(__name__)
 
 # ── Chunking constants ────────────────────────────────────────────────────────
-_CHUNK_CHARS = 6_000
-_OVERLAP_CHARS = 500
+# Smaller chunks = more LLM calls, but 3B models extract better from small windows
+_CHUNK_CHARS = 1_500
+_OVERLAP_CHARS = 300
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 _SYSTEM = """\
-You are an assistant that extracts client feedback from a video-review call transcript.
-You will be given a JSON array of transcript segments. Your job is to find every moment \
-where the CLIENT gives feedback about a video edit.
+You are an assistant that extracts ALL client feedback from a video-review call transcript.
+You will be given transcript segments. Find EVERY moment where the CLIENT gives feedback.
 
 Rules:
 - IGNORE small talk, greetings, pleasantries, and scheduling.
-- IGNORE remarks made by speakers listed as EDITOR_SPEAKERS — those are the editor, not the client.
-- For each feedback moment return a JSON object with EXACTLY these fields:
+- IGNORE remarks by EDITOR_SPEAKERS — they are the editor, not the client.
+- Extract ALL feedback items, not just one.
+- For each feedback moment, create an object with these fields:
   {
-    "quote":      "<verbatim client words, as short as possible>",
-    "note":       "<one-sentence actionable instruction for the editor>",
-    "type":       "change" | "question" | "approval",
-    "category":   "color" | "sound" | "pacing" | "text_graphics" | "edit" | "other",
-    "priority":   "high" | "medium" | "low",
-    "is_global":  true | false,
-    "withdrawn":  true | false,
+    "quote": "<verbatim client words>",
+    "note": "<actionable instruction for editor>",
+    "type": "change" | "question" | "approval",
+    "category": "color" | "sound" | "pacing" | "text_graphics" | "edit" | "other",
+    "priority": "high" | "medium" | "low",
+    "is_global": true | false,
+    "withdrawn": true | false,
     "confidence": <0.0-1.0>,
-    "segment_start_sec": <float from the matching segment's start_sec>,
+    "segment_start_sec": <float>,
     "speaker": "<speaker label>"
   }
-- "withdrawn" must be true if the client explicitly retracts the comment \
-  (e.g. "actually never mind", "ignore that", "that's fine", "forget what I said").
-- "is_global" must be true only when the note applies to the entire video, \
-  not a specific moment (e.g. "make the whole thing warmer").
-- "type" is "approval" when the client is happy with something and wants no change.
+- "withdrawn" = true if client retracts (e.g. "ignore that", "never mind").
+- "is_global" = true only if note applies to entire video.
+- "type" = "approval" when client is happy and wants no change.
 
-CRITICAL OUTPUT FORMAT: You MUST return a JSON ARRAY (starting with [ and ending with ]).
-Even if there is only one feedback item, wrap it in an array like [{ ... }].
-Even if there are zero feedback items, return an empty array: []
-Do NOT return a single object. Do NOT wrap in {"items": [...]}.
-Return ONLY the JSON array. No extra text, no markdown fences.
+OUTPUT: Return a JSON array. Example with 3 items:
+[
+  {"quote":"move title earlier","note":"Move title card 10 seconds earlier","type":"change","category":"edit","priority":"high","is_global":false,"withdrawn":false,"confidence":0.95,"segment_start_sec":30.0,"speaker":"Client"},
+  {"quote":"music is too loud","note":"Lower music volume at 1:30","type":"change","category":"sound","priority":"high","is_global":false,"withdrawn":false,"confidence":0.9,"segment_start_sec":75.0,"speaker":"Client"},
+  {"quote":"Really good work","note":"Client approves the overall edit","type":"approval","category":"other","priority":"low","is_global":true,"withdrawn":false,"confidence":0.95,"segment_start_sec":421.0,"speaker":"Client"}
+]
+Return ONLY the JSON array. No text, no markdown.
 """
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -75,9 +76,6 @@ Return ONLY the JSON array. No extra text, no markdown fences.
 def extract_feedback(t: Transcript) -> list[FeedbackItem]:
     """
     Use the local LLM to extract client feedback items from a transcript.
-
-    When MOCK_LLM=1, delegates entirely to pipeline.py's mock path via
-    call_llm_json (which returns expected_items.json).
 
     Args:
         t: A fully populated Transcript.
@@ -96,30 +94,35 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
     chunks = _chunk_transcript(t)
     raw_items: list[dict[str, Any]] = []
 
-    for chunk_segs in chunks:
+    logger.info("Processing %d chunks for meeting %s", len(chunks), t.meeting_id)
+
+    for i, chunk_segs in enumerate(chunks):
         prompt = _build_prompt(chunk_segs, t.meeting_id)
         try:
             result = call_llm_json(prompt, system=_SYSTEM)
         except Exception as exc:
-            logger.error("LLM call failed for chunk: %s", exc)
+            logger.error("LLM call failed for chunk %d: %s", i, exc)
             continue
 
         if isinstance(result, list):
+            logger.info("Chunk %d returned %d items", i, len(result))
             raw_items.extend(result)
         elif isinstance(result, dict):
-            # The LLM returned a single object instead of an array
-            # Sometimes smaller models do this if they only found one item
+            # Smaller models sometimes return a single object or wrap in a key
             if "feedback" in result and isinstance(result["feedback"], list):
                 raw_items.extend(result["feedback"])
             elif "items" in result and isinstance(result["items"], list):
                 raw_items.extend(result["items"])
             else:
                 raw_items.append(result)
+            logger.info("Chunk %d returned dict (normalized)", i)
         else:
-            logger.warning("LLM returned a non-list for chunk; skipping. Got: %s", type(result))
+            logger.warning("LLM returned unexpected type for chunk %d: %s", i, type(result))
 
+    logger.info("Total raw items before validation: %d", len(raw_items))
     validated = _validate_items(raw_items, t.meeting_id)
     deduped = _deduplicate(validated)
+    logger.info("After validation: %d, after dedup: %d", len(validated), len(deduped))
     return deduped
 
 
@@ -172,7 +175,7 @@ def _build_prompt(segments: list[Segment], meeting_id: str) -> str:
     return (
         f"Meeting ID: {meeting_id}\n"
         f"EDITOR_SPEAKERS (ignore their remarks): {editor_labels}\n\n"
-        f"Transcript segments:\n{segs_json}"
+        f"Extract ALL client feedback from these segments:\n{segs_json}"
     )
 
 
