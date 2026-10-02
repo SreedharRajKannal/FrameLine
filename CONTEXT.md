@@ -129,7 +129,17 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 ### Karthik
 - (nothing yet)
 ### Sivapriyan
-- (nothing yet)
+- 2026-10-02 17:08 ✅ samples/review_call_1.json: realistic 4-5 min GlowSkin review call (Priya=editor, Rahul=client), 25 segments, 12+ feedback moments, all required types present
+- 2026-10-02 17:08 ✅ samples/expected_items.json: replaced placeholder with 12 hand-crafted FeedbackItems for review_call_1 (all types, spoken TCs, global note, approval, withdrawal, PII)
+- 2026-10-02 17:09 ✅ llm.py: Ollama /api/chat client, JSON mode, 120s timeout, retry with fix-JSON follow-up, MOCK_LLM=1 path
+- 2026-10-02 17:10 ✅ anchoring.py: parse_spoken_time() handles M:SS / HH:MM:SS / "at 30s" / "one minute in" / "two minutes forty" / "around the 2 minute mark"; anchor_items() pure fn; FrameGrounder Protocol documented
+- 2026-10-02 17:10 ✅ extraction.py: chunking 6000c+500 overlap, EDITOR_SPEAKERS filter, Pydantic validation, dedup, stable ids, spoken TC auto-parsed from quote
+- 2026-10-02 17:10 ✅ pipeline.py: real path wired (extract_feedback + anchor_items); MOCK path preserved as-is
+- 2026-10-02 17:11 ✅ redaction.py (STRETCH): RedactionResult dataclass, regex for email/phone/money (including spoken amounts), heuristic name detection, optional spaCy upgrade, restore(), redact_transcript()
+- 2026-10-02 17:11 ✅ routers/privacy.py (STRETCH): GET /api/meetings/{id}/safe-transcript implemented
+- 2026-10-02 17:12 ✅ backend/tests/test_sivapriyan.py: 30/30 tests pass (16 parser table tests, 6 anchor tests, MOCK smoke, eval recall/precision, 5 redaction tests)
+- 2026-10-02 17:23 ✅ git commit 8193ba7 (local; push blocked – see blocker below)
+- 2026-10-02 17:25 🚧 BLOCKER: Ollama crashes on start ("Unable to init instance: Unspecified error") – GPU driver issue, needs manual fix (see Open questions #1)
 
 ## 11. Decisions log (append only: `YYYY-MM-DD HH:MM, name: decision`)
 - 2026-10-02 16:35, Sreedhar: store.py uses absolute imports (`backend.app.*`) so the package works from the repo root with `python -m` or pytest.
@@ -137,7 +147,7 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35, Sreedhar: teammate router imports in main.py are guarded by try/except ImportError so the app starts even when stubs have no routes yet.
 
 ## 12. Open questions / blockers (append only: `name: question`)
-
+- Sivapriyan: Ollama crashes immediately on start with "Unable to init instance: Unspecified error" – likely GPU/CUDA driver conflict. Workaround: set OLLAMA_NO_GPU=1 in .env and restart Ollama manually from the system tray, OR run `set OLLAMA_NO_GPU=1 && ollama serve` in a terminal before starting the backend.
 ## 13. How to run
 
 ### Prerequisites
