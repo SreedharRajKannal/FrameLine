@@ -85,14 +85,14 @@ def main():
         print(f"Body: {resp.text}")
 
         if resp.status_code == 200:
-            print("\n✅ Webhook accepted!")
+            print("\n[OK] Webhook accepted!")
         elif resp.status_code == 401:
-            print("\n❌ Signature rejected – check that MEETILY_WEBHOOK_SECRET matches")
+            print("\n[FAIL] Signature rejected -- check that MEETILY_WEBHOOK_SECRET matches")
         else:
-            print(f"\n⚠️  Unexpected response code: {resp.status_code}")
+            print(f"\n[WARN] Unexpected response code: {resp.status_code}")
 
     except httpx.ConnectError:
-        print(f"❌ Could not connect to {receiver_url}")
+        print(f"[FAIL] Could not connect to {receiver_url}")
         print("  Make sure the Frameline backend is running on port 8000")
         sys.exit(1)
 

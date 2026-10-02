@@ -62,7 +62,7 @@ def main():
             if resp.status_code == 201:
                 data = resp.json()
                 print()
-                print("✅ Webhook registered successfully!")
+                print("[OK] Webhook registered successfully!")
                 print(f"  Webhook ID: {data.get('id')}")
                 print(f"  URL: {data.get('url')}")
                 print(f"  Events: {data.get('events')}")
@@ -70,7 +70,7 @@ def main():
                 hmac_secret = data.get("hmac_secret")
                 if hmac_secret:
                     print("=" * 60)
-                    print("⚠️  SAVE THIS SECRET – it is shown only once!")
+                    print("[!] SAVE THIS SECRET -- it is shown only once!")
                     print(f"  MEETILY_WEBHOOK_SECRET={hmac_secret}")
                     print("=" * 60)
                     print()
@@ -80,12 +80,12 @@ def main():
                 print("  Settings > Integrations > Advanced > Destinations > Allow")
                 print("  (or look for the 'Waiting for you' banner in Integrations)")
             else:
-                print(f"❌ Registration failed: {resp.status_code}")
+                print(f"[FAIL] Registration failed: {resp.status_code}")
                 print(f"  Response: {resp.text}")
                 sys.exit(1)
 
     except httpx.ConnectError:
-        print(f"❌ Could not connect to Meetily at {base_url}")
+        print(f"[FAIL] Could not connect to Meetily at {base_url}")
         print("  Make sure Meetily Pro is running and the Automation API is enabled.")
         print("  Settings > PRO > Integrations > Turn on")
         sys.exit(1)
