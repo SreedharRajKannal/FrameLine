@@ -184,9 +184,19 @@ async def import_meeting(
 
     # Run pipeline in background
     def _process():
-        settings = store.get_settings(transcript.meeting_id)
-        items = process_transcript(transcript, settings)
-        store.save_items(transcript.meeting_id, items)
+        import logging
+        _log = logging.getLogger(__name__)
+        try:
+            settings = store.get_settings(transcript.meeting_id)
+            items = process_transcript(transcript, settings)
+            _log.info("Pipeline produced %d items for %s", len(items), transcript.meeting_id)
+            if items:
+                store.save_items(transcript.meeting_id, items)
+                _log.info("Saved %d items for %s", len(items), transcript.meeting_id)
+            else:
+                _log.warning("Pipeline returned 0 items for %s", transcript.meeting_id)
+        except Exception as exc:
+            _log.exception("Background _process failed for %s: %s", transcript.meeting_id, exc)
 
     background_tasks.add_task(_process)
 

@@ -109,25 +109,44 @@ def call_llm_json(prompt: str, system: str = "") -> list | dict:
     # ── Attempt 1 ────────────────────────────────────────────────────────────
     raw = _call_ollama(prompt, system, json_mode=True)
     try:
-        return _parse_json(raw)
+        result = _parse_json(raw)
+        return _normalize_result(result)
     except ValueError as first_err:
         logger.warning("Ollama returned invalid JSON on first attempt: %s. Retrying…", first_err)
 
     # ── Attempt 2 – "fix your JSON" follow-up ────────────────────────────────
     fix_prompt = (
         "Your previous response was not valid JSON. "
-        "Return ONLY the corrected JSON with no extra text, markdown, or explanation.\n\n"
+        "Return ONLY the corrected JSON array with no extra text, markdown, or explanation.\n\n"
         f"Bad response:\n{raw}"
     )
     raw2 = _call_ollama(fix_prompt, system="", json_mode=True)
     try:
-        return _parse_json(raw2)
+        result = _parse_json(raw2)
+        return _normalize_result(result)
     except ValueError as second_err:
         raise RuntimeError(
             f"Ollama returned invalid JSON after retry. "
             f"First error: {first_err}. Second error: {second_err}.\n"
             f"Last response: {raw2[:500]}"
         ) from second_err
+
+
+def _normalize_result(result):
+    """
+    Smaller models often return a single dict or wrap items in a key.
+    Normalize to always return a list of item dicts.
+    """
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        # Check if the dict wraps a list under a known key
+        for key in ("feedback", "items", "results", "data"):
+            if key in result and isinstance(result[key], list):
+                return result[key]
+        # It's a single item dict — wrap it
+        return [result]
+    return result
 
 
 def _parse_json(text: str) -> list | dict:

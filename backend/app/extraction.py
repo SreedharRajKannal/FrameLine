@@ -62,7 +62,12 @@ Rules:
 - "is_global" must be true only when the note applies to the entire video, \
   not a specific moment (e.g. "make the whole thing warmer").
 - "type" is "approval" when the client is happy with something and wants no change.
-- Return ONLY a JSON array of these objects. No extra text, no markdown fences.
+
+CRITICAL OUTPUT FORMAT: You MUST return a JSON ARRAY (starting with [ and ending with ]).
+Even if there is only one feedback item, wrap it in an array like [{ ... }].
+Even if there are zero feedback items, return an empty array: []
+Do NOT return a single object. Do NOT wrap in {"items": [...]}.
+Return ONLY the JSON array. No extra text, no markdown fences.
 """
 
 # ── Main entry point ──────────────────────────────────────────────────────────
