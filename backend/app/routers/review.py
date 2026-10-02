@@ -97,9 +97,14 @@ def reanchor(meeting_id: str) -> dict:
     except ImportError:
         raise HTTPException(status_code=503, detail="anchoring module not yet available")
 
+    transcript = store.get_transcript(meeting_id)
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
     items = store.get_items(meeting_id)
     if not items:
-        raise HTTPException(status_code=404, detail="Meeting not found or has no items")
+        return {"reanchored": 0}
+
     settings = store.get_settings(meeting_id)
 
     try:
