@@ -113,6 +113,8 @@ def build_video_context(video_id: str) -> dict:
     descs = store.get_frame_descriptions(video_id)
     detections = store.get_detections(video_id)
     shots = store.get_shots(video_id)
+    video = store.get_video(video_id)
+    duration_sec = video.duration_sec if video else None
 
     if not descs and not detections:
         logger.warning("[%s] Cannot build video context: no vision or detector observations found", video_id[:8])
@@ -146,7 +148,7 @@ def build_video_context(video_id: str) -> dict:
             # Check if same scene or within close window
             same_scene = (
                 not data.get("changed_from_previous", False)
-                or (t_sec - curr_segment["end_sec"]) <= config.VISION_FRAME_INTERVAL_SEC + 0.1
+                and (t_sec - curr_segment["end_sec"]) <= config.VISION_FRAME_INTERVAL_SEC + 0.1
             )
             if same_scene and (t_sec - curr_segment["start_sec"]) <= 12.0:
                 curr_segment["end_sec"] = t_sec
@@ -195,10 +197,14 @@ def build_video_context(video_id: str) -> dict:
             })
 
     # Align segment end times nicely
-    for i in range(len(scene_segments) - 1):
-        scene_segments[i]["end_sec"] = scene_segments[i + 1]["start_sec"]
-    if scene_segments:
-        scene_segments[-1]["end_sec"] += config.VISION_FRAME_INTERVAL_SEC
+    if descs:
+        for i in range(len(scene_segments) - 1):
+            scene_segments[i]["end_sec"] = scene_segments[i + 1]["start_sec"]
+        if scene_segments:
+            scene_segments[-1]["end_sec"] += config.VISION_FRAME_INTERVAL_SEC
+    if duration_sec is not None:
+        for segment in scene_segments:
+            segment["end_sec"] = min(segment["end_sec"], duration_sec)
 
     # 2. Build VLM entities as fallback/secondary objects.
     entity_list = build_vlm_entity_index(descs)
@@ -212,11 +218,10 @@ def build_video_context(video_id: str) -> dict:
         ]
 
     # 3. Build Global Summary
-    distinct_scenes = [s["summary"] for s in scene_segments[:6]]
+    subject_names = ", ".join(entity["key"] for entity in entity_list[:8]) or "no recognized entities"
     global_summary = (
-        f"Video timeline consists of {len(scene_segments)} scene segments featuring key subjects: "
-        + ", ".join([e["key"] for e in entity_list[:8]])
-        + ". Key scenes include: " + "; ".join(distinct_scenes) + "."
+        f"Video contains {len(scene_segments)} scene segments and {len(entity_list)} indexed entities: "
+        f"{subject_names}. See the timeline for per-scene descriptions."
     )
 
     context_data = {

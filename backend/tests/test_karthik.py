@@ -335,6 +335,29 @@ class TestTranscriptParser:
         assert t.segments[0].text == "This is the first line"
         assert t.segments[1].start_sec == 150.0  # 2*60 + 30
 
+    def test_multiline_timestamp_speaker_transcript(self):
+        from backend.app.ingest import parse_uploaded_transcript
+
+        text = (
+            "[00:00]\n\nSpeaker 1\n"
+            "Slow the video when the bottle is being picked up. Also add a zoom-in effect at five-second mark.\n\n"
+            "[00:12]\n\nSpeaker 1\nAnd also\n\n"
+            "[00:14]\n\nSpeaker 1\nIncrease the contrast of the overall video.\n\n"
+            "[00:14]\n\nHost\nin\n"
+        )
+
+        transcript = parse_uploaded_transcript("review.txt", text.encode())
+
+        assert [(s.start_sec, s.speaker) for s in transcript.segments] == [
+            (0.0, "Speaker 1"),
+            (12.0, "Speaker 1"),
+            (14.0, "Speaker 1"),
+            (14.0, "Host"),
+        ]
+        assert "five-second mark" in transcript.segments[0].text
+        from backend.app.anchoring import parse_spoken_time
+        assert parse_spoken_time(transcript.segments[0].text) == 5.0
+
     def test_text_plain_timestamp(self):
         from backend.app.ingest import parse_uploaded_transcript
 

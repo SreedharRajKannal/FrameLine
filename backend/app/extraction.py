@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -38,43 +39,11 @@ _OVERLAP_CHARS = 300
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 _SYSTEM = """\
-You are an assistant that extracts ALL client feedback from a video-review call transcript snippet.
-You will be given a short exchange. Find EVERY moment where the CLIENT gives feedback.
-
-Rules:
-- IGNORE small talk, greetings, pleasantries, and scheduling.
-- IGNORE remarks by EDITOR_SPEAKERS — they are the editor, not the client.
-- For each feedback moment, create an object with these fields:
-  {
-    "quote": "<verbatim client words>",
-    "note": "<actionable instruction for editor>",
-    "type": "change" | "question" | "approval",
-    "category": "color" | "sound" | "pacing" | "text_graphics" | "edit" | "other",
-    "priority": "high" | "medium" | "low",
-    "is_global": true | false,
-    "withdrawn": true | false,
-    "confidence": <0.0-1.0>,
-    "segment_start_sec": <float>,
-    "speaker": "<speaker label>"
-  }
-- "withdrawn" = true if client retracts (e.g. "ignore that", "never mind").
-- "is_global" = true only if note applies to entire video.
-- "type" = "approval" when client is happy and wants no change.
-
-OUTPUT: Return a JSON object with an "items" array. 
-If there is feedback, return it like this:
-{
-  "items": [
-    {"quote":"music is too loud","note":"Lower music volume at 1:30","type":"change","category":"sound","priority":"high","is_global":false,"withdrawn":false,"confidence":0.9,"segment_start_sec":75.0,"speaker":"Client"}
-  ]
-}
-
-CRITICAL: If there is NO feedback in the snippet (e.g. just greetings or small talk), you MUST output exactly:
-{
-  "items": []
-}
-
-Return ONLY valid JSON. No text, no markdown.
+Extract explicit client feedback from these timestamped transcript turns. Ignore every speaker listed in EDITOR_SPEAKERS.
+Split separate requested actions into separate items, even when they occur in one sentence. Preserve the exact quote.
+For each item provide: quote, a non-empty actionable note, type (change/question/approval), category (color/sound/pacing/text_graphics/edit/other), priority (high/medium/low), is_global, withdrawn, confidence, segment_start_sec, and speaker.
+Use the timestamp and speaker attached to the matching transcript turn. A spoken time mentioned in the quote is not the turn timestamp.
+Use only the allowed category and type values. Return JSON only as {"items":[...]}. Return an empty items array only when there is no client feedback.
 """
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -126,10 +95,163 @@ def extract_feedback(t: Transcript) -> list[FeedbackItem]:
             logger.warning("LLM returned unexpected type for chunk %d: %s", i, type(result))
 
     logger.info("Total raw items before validation: %d", len(raw_items))
+    raw_items = [part for item in raw_items for part in _split_compound_feedback(item)]
     validated = _validate_items(raw_items, t.meeting_id)
     deduped = _deduplicate(validated)
+    recovered = _recover_explicit_actions(t.segments, deduped, t.meeting_id)
+    deduped = _deduplicate(deduped + recovered)
+    if recovered:
+        logger.info("Recovered %d explicit actions missed by the LLM", len(recovered))
+    deduped = _align_items_to_transcript(deduped, t.segments)
     logger.info("After validation: %d, after dedup: %d", len(validated), len(deduped))
     return deduped
+
+
+def _infer_category(text: str) -> str:
+    value = text.lower()
+    if any(word in value for word in ("color", "contrast", "saturat", "warm", "cool", "bright", "dark")):
+        return "color"
+    if any(word in value for word in ("sound", "music", "audio", "volume", "loud", "quiet")):
+        return "sound"
+    if any(word in value for word in ("slow", "speed", "pace", "faster")):
+        return "pacing"
+    if any(word in value for word in ("text", "title", "caption", "subtitle", "graphic")):
+        return "text_graphics"
+    if any(word in value for word in ("zoom", "crop", "pan", "cut", "transition", "pick up", "pickup")):
+        return "edit"
+    return "other"
+
+
+def _normalize_feedback_item(raw: dict[str, Any]) -> dict[str, Any]:
+    """Repair common small-model schema drift without losing clear feedback."""
+    item = dict(raw)
+    quote = str(item.get("quote") or "").strip()
+    note = item.get("note")
+    item["note"] = str(note).strip() if note and str(note).strip() else quote
+
+    category = str(item.get("category") or "").strip().lower().replace("-", "_")
+    allowed_categories = {"color", "sound", "pacing", "text_graphics", "edit", "other"}
+    inferred_category = _infer_category(f"{quote} {item['note']}")
+    item["category"] = (
+        inferred_category
+        if inferred_category != "other"
+        else category if category in allowed_categories else "other"
+    )
+
+    if item.get("type") not in {"change", "question", "approval"}:
+        item["type"] = "change"
+    if item.get("priority") not in {"high", "medium", "low"}:
+        item["priority"] = "medium"
+    global_text = f"{quote} {item['note']}".lower()
+    item["is_global"] = any(phrase in global_text for phrase in (
+        "overall", "whole video", "entire video", "throughout the video", "across the video",
+    ))
+    if item.get("withdrawn") is None:
+        item["withdrawn"] = False
+    if item.get("confidence") is None:
+        item["confidence"] = 0.6
+    return item
+
+
+def _split_compound_feedback(raw: Any) -> list[dict[str, Any]]:
+    """Split a model quote containing distinct actions joined by sentence-level “also”."""
+    if not isinstance(raw, dict):
+        return []
+    quote = str(raw.get("quote") or "").strip()
+    if not quote:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+(?=(?:also\b|and\s+also\b))", quote, flags=re.IGNORECASE)
+    if len(parts) == 1:
+        return [raw]
+    results = []
+    for part in parts:
+        clause = part.strip()
+        if not clause or re.fullmatch(r"(?:and\s+)?also[.!?\s]*", clause, flags=re.IGNORECASE):
+            continue
+        item = dict(raw)
+        item["quote"] = clause
+        item["note"] = clause
+        results.append(item)
+    return results
+
+
+def _align_items_to_transcript(items: list[FeedbackItem], segments: list[Segment]) -> list[FeedbackItem]:
+    """Replace model-guessed turn timestamps with the matching source segment timestamp."""
+    aligned = []
+    for item in items:
+        quote = set(re.findall(r"[a-z0-9]+", item.quote.lower()))
+        best_segment = None
+        best_score = 0.0
+        for segment in segments:
+            text = segment.text.lower()
+            if item.quote.lower() in text or text in item.quote.lower():
+                best_segment = segment
+                best_score = 1.0
+                break
+            tokens = set(re.findall(r"[a-z0-9]+", text))
+            score = len(quote & tokens) / max(len(quote), 1)
+            if score > best_score:
+                best_segment = segment
+                best_score = score
+        if best_segment is not None and best_score >= 0.5:
+            item = item.model_copy(update={
+                "segment_start_sec": best_segment.start_sec,
+                "speaker": best_segment.speaker or item.speaker,
+            })
+        aligned.append(item)
+    return sorted(aligned, key=lambda item: item.segment_start_sec)
+
+
+def _recover_explicit_actions(
+    segments: list[Segment],
+    existing_items: list[FeedbackItem],
+    meeting_id: str,
+) -> list[FeedbackItem]:
+    """Recover clear imperative edit clauses omitted by a small local model."""
+    editor_speakers = {speaker.strip().lower() for speaker in config.EDITOR_SPEAKERS}
+    recovered = []
+    action_start = re.compile(
+        r"^(?:(?:and|also)\s+)*(?:please\s+)?"
+        r"(?:slow|speed|zoom|increase|decrease|reduce|raise|lower|boost|add|remove|cut|crop|make|"
+        r"brighten|darken|warm|cool|desaturate|fade|mute|turn|keep|move|show|hide|change|use)\b",
+        re.IGNORECASE,
+    )
+    for segment in segments:
+        if segment.speaker and segment.speaker.strip().lower() in editor_speakers:
+            continue
+        clauses = re.split(r"(?<=[.!?])\s+|;\s+", segment.text.strip())
+        for clause in clauses:
+            quote = clause.strip()
+            if not quote or not action_start.search(quote):
+                continue
+            tokens = set(re.findall(r"[a-z0-9]+", quote.lower()))
+            covered = False
+            for item in existing_items:
+                existing_tokens = set(re.findall(r"[a-z0-9]+", f"{item.quote} {item.note}".lower()))
+                if tokens and len(tokens & existing_tokens) / len(tokens) >= 0.8:
+                    covered = True
+                    break
+            if covered:
+                continue
+            is_global = any(term in quote.lower() for term in (
+                "overall", "whole video", "entire video", "throughout the video", "across the video",
+            ))
+            recovered.append(FeedbackItem(
+                id=_make_id(meeting_id, quote),
+                meeting_id=meeting_id,
+                quote=quote,
+                note=quote,
+                type="change",
+                category=_infer_category(quote),
+                priority="medium",
+                speaker=segment.speaker,
+                segment_start_sec=segment.start_sec,
+                confidence=0.65,
+                needs_review=True,
+                is_global=is_global,
+                spoken_timecode_sec=parse_spoken_time(quote),
+            ))
+    return recovered
 
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
@@ -229,6 +351,11 @@ def _validate_items(raw: list[dict[str, Any]], meeting_id: str) -> list[Feedback
         if not isinstance(obj, dict):
             logger.warning("Item %d is not a dict; skipping.", i)
             continue
+        obj = _normalize_feedback_item(obj)
+        if re.fullmatch(r"(?:and\s+)?also[.!?\s]*", str(obj.get("quote") or "").strip(), flags=re.IGNORECASE):
+            logger.info("Skipping filler continuation from LLM: %r", obj.get("quote"))
+            continue
+
         # Inject required fields that extraction.py controls
         obj.setdefault("meeting_id", meeting_id)
         obj["id"] = _make_id(meeting_id, obj.get("quote", str(i)))

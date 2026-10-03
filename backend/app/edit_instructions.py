@@ -134,13 +134,19 @@ def _find_entity_intervals(target_entity: str, video_id: str) -> list[dict[str, 
     """Look up target entity intervals from DB entity index."""
     entities = store.get_entities(video_id)
     target_clean = target_entity.strip().lower()
-
-    for ent in entities:
-        key = ent["key"].lower()
-        name = ent.get("name", "").lower()
-        if target_clean in key or key in target_clean or target_clean in name:
-            return ent.get("intervals", [])
-    return []
+    exact = [ent for ent in entities if ent["key"].strip().lower() == target_clean]
+    matches = exact or [
+        ent for ent in entities
+        if target_clean in ent["key"].lower() or target_clean in ent.get("name", "").lower()
+    ]
+    intervals = [interval for entity in matches for interval in entity.get("intervals", [])]
+    unique_intervals = sorted({
+        (interval["start_sec"], interval["end_sec"]) for interval in intervals
+    })
+    return [
+        {"start_sec": start_sec, "end_sec": end_sec}
+        for start_sec, end_sec in unique_intervals
+    ]
 
 
 def generate_edit_instructions(
@@ -169,6 +175,7 @@ def generate_edit_instructions(
         return []
 
     results = []
+    generation_errors = []
 
     for item in change_items:
         # Mock mode check
@@ -217,32 +224,51 @@ def generate_edit_instructions(
             f"Category: {item.category}\n"
             f"Transcript Anchor Time: {item.anchor_sec or item.segment_start_sec}s\n\n"
             f"{context_str}\n\n"
-            "Formulate an edit instruction for this feedback item. Output ONLY JSON:\n"
+            "Create one actionable edit instruction for this feedback. If the client requests an edit, "
+            "set has_effect to true. Use the video context to choose the matching entity and its interval; "
+            "do not replace an explicit transcript time with an unrelated interval. For global requests, "
+            "use a null target_entity. Return only this JSON object with valid JSON values:\n"
             "{\n"
-            '  "has_effect": true|false,\n'
-            '  "effect": "color_pop|saturation|contrast|brightness|warm|cool|desaturate|zoom_in|zoom_out|blur|vignette|speed|fade_in|fade_out|volume|mute",\n'
-            '  "target_entity": "target entity key or null",\n'
-            '  "start_sec": <float>,\n'
-            '  "end_sec": <float>,\n'
-            '  "params": {"saturation": 1.4},\n'
-            '  "confidence": 0.0-1.0,\n'
-            '  "reason": "short explanation"\n'
+            '  "has_effect": true,\n'
+            '  "effect": "speed",\n'
+            '  "target_entity": "bottle",\n'
+            '  "start_sec": 5.0,\n'
+            '  "end_sec": 10.0,\n'
+            '  "params": {"factor": 0.7},\n'
+            '  "confidence": 0.85,\n'
+            '  "reason": "Slow the bottle pickup as requested."\n'
             "}"
         )
 
         try:
             res_json = call_llm_json(prompt, system="You are a professional video editor creating precise ffmpeg effect specifications.")
             data = res_json[0] if isinstance(res_json, list) and res_json else res_json
-            if isinstance(data, dict) and data.get("has_effect"):
-                effect = data.get("effect", "color_pop")
+            effect = data.get("effect") if isinstance(data, dict) else None
+            has_effect = data.get("has_effect", effect in CLOSED_EFFECTS) if isinstance(data, dict) else False
+            if isinstance(data, dict) and has_effect and effect in CLOSED_EFFECTS:
                 target = data.get("target_entity")
                 intervals = _find_entity_intervals(target, video_id) if (target and video_id) else []
 
                 start_sec = data.get("start_sec", item.anchor_sec or item.segment_start_sec or 0.0)
                 end_sec = data.get("end_sec", start_sec + 5.0)
                 if intervals:
-                    start_sec = intervals[0]["start_sec"]
-                    end_sec = intervals[0]["end_sec"]
+                    hint_sec = item.spoken_timecode_sec if item.spoken_timecode_sec is not None else item.anchor_sec
+                    selected_interval = min(
+                        intervals,
+                        key=lambda interval: (
+                            0.0 if hint_sec is not None and interval["start_sec"] <= hint_sec <= interval["end_sec"]
+                            else abs((interval["start_sec"] + interval["end_sec"]) / 2.0 - (hint_sec or start_sec))
+                        ),
+                    )
+                    if item.spoken_timecode_sec is not None:
+                        start_sec = item.spoken_timecode_sec
+                        end_sec = min(
+                            selected_interval["end_sec"],
+                            max(float(end_sec), start_sec + 1.0),
+                        )
+                    else:
+                        start_sec = selected_interval["start_sec"]
+                        end_sec = selected_interval["end_sec"]
 
                 filter_str = compile_ffmpeg_filter(effect, data.get("params", {}))
 
@@ -266,10 +292,14 @@ def generate_edit_instructions(
                 results.append(inst_dict)
         except Exception as exc:
             logger.warning("Failed generating edit instruction for item %s: %s", item.id, exc)
+            generation_errors.append(f"{item.id}: {exc}")
 
     # 6GB VRAM Safety: Unload text model after edit generation batch
     from backend.app.vision_pass import unload_ollama_model
     unload_ollama_model(config.OLLAMA_MODEL)
+
+    if generation_errors and not results:
+        raise RuntimeError("Qwen failed to generate edit instructions: " + "; ".join(generation_errors))
 
     return results
 

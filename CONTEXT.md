@@ -133,6 +133,7 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-03 ✅ YOLO-FIRST VISION: nano YOLO + ByteTrack detection at configurable sampling FPS, per-track color/entity intervals, persisted boxes/masks, detector-first context, optional low-frequency VLM, and paired interval evaluation.
 - 2026-10-03 ✅ YOLO-ONLY DEFAULT AND UI REFRESH: disabled VLM/caption calls by default, fixed video-link context race and legacy-video detector backfill, exposed indexing/extraction status to the UI, and refreshes imported feedback when background processing completes. Text, detector, VLM, caption, and model unload calls share `LOCAL_INFERENCE_LOCK`.
 - 2026-10-03 ✅ CONTEXTUAL FRAME ANALYSIS: enabled MiniCPM-V by default alongside YOLO, sampling each frame every 2.5 seconds without an extra thinking request or dedup skip; timeline summaries now include scene/action/mood/text/lighting.
+- 2026-10-03 ✅ TRANSCRIPT→QWEN EDIT FLOW: parsed multiline timestamp/speaker imports, recovered missed compound actions and spoken second marks, added visible Edit Instructions UI/API errors, passed saved video context into Qwen, preserved explicit target times, and clamped context scenes to video duration.
 
 ### Karthik
 - 2026-10-02 17:00 ✅ PRE-WORK: Read all Meetily docs (authentication, webhooks-and-sse, api-reference, events, enable-and-connect). Key findings:

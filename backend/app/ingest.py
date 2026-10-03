@@ -164,11 +164,49 @@ def _parse_text_transcript(text: str, meeting_id: str) -> Transcript:
     """Parse a plain text transcript with timestamped lines."""
     lines = text.strip().split("\n")
     segments: list[Segment] = []
+    standalone_timestamp = re.compile(r"^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?$")
+    standalone_speaker = re.compile(r"^(?:speaker\s+\w+|host|editor|client|director|reviewer):?$", re.IGNORECASE)
 
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        timestamp_match = standalone_timestamp.fullmatch(line)
+        if timestamp_match:
+            timestamp_parts = timestamp_match.group(1).split(":")
+            if len(timestamp_parts) == 3:
+                hours, minutes, seconds = timestamp_parts
+                start_sec = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+            else:
+                minutes, seconds = timestamp_parts
+                start_sec = int(minutes) * 60 + float(seconds)
+
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+
+            speaker = None
+            if i < len(lines):
+                speaker_line = lines[i].strip()
+                if standalone_speaker.fullmatch(speaker_line):
+                    speaker = speaker_line.rstrip(":").strip()
+                    i += 1
+                    while i < len(lines) and not lines[i].strip():
+                        i += 1
+
+            body_lines = []
+            while i < len(lines) and not standalone_timestamp.fullmatch(lines[i].strip()):
+                if lines[i].strip():
+                    body_lines.append(lines[i].strip())
+                i += 1
+            body = " ".join(body_lines)
+            if body:
+                segments.append(Segment(start_sec=start_sec, speaker=speaker, text=body))
+            continue
+
         seg = _parse_timestamped_line(line)
         if seg:
             segments.append(seg)
+        i += 1
 
     return Transcript(
         meeting_id=meeting_id,

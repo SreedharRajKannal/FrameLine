@@ -318,6 +318,9 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
+  const [editInstructions, setEditInstructions] = useState([])
+  const [generatingEdits, setGeneratingEdits] = useState(false)
+  const [editError, setEditError] = useState(null)
   const [videoUrl, setVideoUrl] = useState(null)
   const [tab, setTab] = useState('items') // 'items' | 'settings'
   const [filterReview, setFilterReview] = useState(false)
@@ -332,6 +335,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       .then(d => {
         setData(d)
         setVideoUrl(d.video_id ? `/api/videos/${d.video_id}/stream` : null)
+        fetchEditInstructions(meetingId).then(setEditInstructions).catch(() => setEditInstructions([]))
       })
       .catch(e => {
         if (e.message.includes('404')) {
@@ -369,6 +373,31 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
     }))
     setSelectedItem(updated)
   }, [])
+
+  const handleGenerateEdits = async () => {
+    setGeneratingEdits(true)
+    setEditError(null)
+    try {
+      const generated = await generateEditInstructions(meetingId, data.video_id || null)
+      setEditInstructions(generated)
+      if (generated.length === 0) {
+        setEditError('Qwen returned no edit instructions. Check Ollama and confirm the transcript has actionable change items.')
+      } else {
+        toast(`Generated ${generated.length} edit instruction${generated.length === 1 ? '' : 's'}`, 'success')
+      }
+    } catch (error) {
+      setEditError(`Edit generation failed: ${error.message}`)
+      toast(`Edit generation failed: ${error.message}`, 'error')
+    } finally {
+      setGeneratingEdits(false)
+    }
+  }
+
+  const handleEditInstructionUpdated = (updated) => {
+    setEditInstructions(current => current.map(instruction =>
+      instruction.id === updated.id ? updated : instruction
+    ))
+  }
 
   const handleSelectItem = (item) => {
     setSelectedItem(item)
@@ -444,6 +473,9 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
         <button className={`tab ${tab === 'vision' ? 'active' : ''}`} onClick={() => setTab('vision')}>
           📹 Video Context
         </button>
+        <button className={`tab ${tab === 'edits' ? 'active' : ''}`} onClick={() => setTab('edits')}>
+          Edit Instructions ({editInstructions.length})
+        </button>
         <button className={`tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
           ⚙ Settings
         </button>
@@ -477,6 +509,32 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
               if (videoRef.current) videoRef.current.currentTime = tSec
             }}
           />
+        </div>
+      ) : tab === 'edits' ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          <div className="items-header">
+            <span className="items-count">Qwen edit instructions</span>
+            <span className="items-spacer" />
+            <button className="btn btn-primary btn-sm" onClick={handleGenerateEdits} disabled={generatingEdits || !data.items?.length}>
+              {generatingEdits ? <><span className="spinner" /> Generating…</> : 'Generate from feedback'}
+            </button>
+          </div>
+          {editError && <div className="alert alert-error">{editError}</div>}
+          {editInstructions.length === 0 ? (
+            <div className="empty-state">
+              No edit instructions yet. Generate them from the transcript feedback.
+              {data.video_id ? ' The linked video context and entity intervals will be included in Qwen’s prompt.' : ' Link a video to include visual context.'}
+            </div>
+          ) : editInstructions.map(instruction => (
+            <EditInstructionCard
+              key={instruction.id}
+              instruction={instruction}
+              onUpdate={handleEditInstructionUpdated}
+              onSeek={(timeSec) => {
+                if (videoRef.current) videoRef.current.currentTime = timeSec
+              }}
+            />
+          ))}
         </div>
       ) : (
 

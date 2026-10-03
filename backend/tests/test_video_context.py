@@ -74,3 +74,39 @@ def test_default_vlm_samples_every_two_and_half_seconds(monkeypatch):
     assert config.VISION_FRAME_INTERVAL_SEC == 2.5
     assert config.VISION_THINK_BUDGET_SEC == 0
     assert config.VISION_DEDUP_THRESHOLD == 0
+
+
+def test_scene_timeline_respects_change_flag_and_video_duration(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "scene-boundaries.db"))
+    store.init_db()
+    video_id = "test-scene-boundaries"
+    store.save_video(Video(
+        video_id=video_id,
+        filename="short.mp4",
+        path="short.mp4",
+        duration_sec=8.6,
+    ))
+    store.save_frame_description(video_id, 0.0, {
+        "scene": "A bottle rests on a table.",
+        "objects": [{"name": "bottle", "color": "amber"}],
+        "changed_from_previous": False,
+    })
+    store.save_frame_description(video_id, 2.5, {
+        "scene": "A hand picks up the bottle.",
+        "action": "The hand lifts the bottle.",
+        "objects": [{"name": "bottle", "color": "amber"}],
+        "changed_from_previous": True,
+    })
+    for time_sec in (5.0, 7.5):
+        store.save_frame_description(video_id, time_sec, {
+            "scene": "A hand holds the bottle above the table.",
+            "action": "The bottle remains lifted.",
+            "objects": [{"name": "bottle", "color": "amber"}],
+            "changed_from_previous": False,
+        })
+
+    context = build_video_context(video_id)
+
+    assert len(context["scene_segments"]) == 2
+    assert context["scene_segments"][-1]["start_sec"] == 2.5
+    assert context["scene_segments"][-1]["end_sec"] == 8.6

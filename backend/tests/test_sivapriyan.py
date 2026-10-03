@@ -22,7 +22,7 @@ import pytest
 os.environ.setdefault("MOCK_LLM", "1")
 
 from backend.app.anchoring import anchor_items, parse_spoken_time  # noqa: E402
-from backend.app.extraction import extract_feedback  # noqa: E402
+from backend.app.extraction import _normalize_feedback_item, extract_feedback  # noqa: E402
 from backend.app.models import FeedbackItem, ProjectSettings, Segment, Transcript  # noqa: E402
 from backend.app.redaction import redact, restore  # noqa: E402
 
@@ -44,6 +44,8 @@ PARSER_CASES: list[tuple[str, float | None]] = [
     # "at N seconds"
     ("at 30 seconds", 30.0),
     ("at 90 seconds the music drops", 90.0),
+    ("at five-second mark", 5.0),
+    ("zoom in at the 5-second mark", 5.0),
     # "N minute[s] in"
     ("one minute in", 60.0),
     ("two minutes in is where it goes wrong", 120.0),
@@ -65,6 +67,65 @@ PARSER_CASES: list[tuple[str, float | None]] = [
 def test_parse_spoken_time(text: str, expected: float | None) -> None:
     result = parse_spoken_time(text)
     assert result == expected, f"parse_spoken_time({text!r}) = {result}, want {expected}"
+
+
+def test_feedback_normalization_corrects_scope_and_action_category() -> None:
+    zoom = _normalize_feedback_item({
+        "quote": "Add a zoom-in effect at five-second mark.",
+        "note": None,
+        "type": "change",
+        "category": "pacing",
+        "is_global": True,
+        "withdrawn": None,
+    })
+    contrast = _normalize_feedback_item({
+        "quote": "Increase the contrast of the overall video.",
+        "note": None,
+        "type": "change",
+        "category": "pacing",
+        "is_global": False,
+        "withdrawn": None,
+    })
+
+    assert zoom["category"] == "edit"
+    assert zoom["is_global"] is False
+    assert zoom["withdrawn"] is False
+    assert zoom["note"] == zoom["quote"]
+    assert contrast["category"] == "color"
+    assert contrast["is_global"] is True
+
+
+def test_multiline_user_transcript_extracts_three_actions(monkeypatch) -> None:
+    from backend.app import config, extraction
+    from backend.app.ingest import parse_uploaded_transcript
+
+    transcript_text = (
+        "[00:00]\n\nSpeaker 1\n"
+        "Slow the video when the bottle is being picked up. Also add a zoom-in effect at five-second mark.\n\n"
+        "[00:12]\n\nSpeaker 1\nAnd also\n\n"
+        "[00:14]\n\nSpeaker 1\nIncrease the contrast of the overall video.\n\n"
+        "[00:14]\n\nHost\nin\n"
+    )
+    transcript = parse_uploaded_transcript("user-review.txt", transcript_text.encode())
+    monkeypatch.setenv("MOCK_LLM", "0")
+    monkeypatch.setattr(config, "EDITOR_SPEAKERS", ["Host"])
+    captured_prompts = []
+
+    def fake_llm(prompt, system=""):
+        captured_prompts.append(prompt)
+        return {"items": [
+            {"quote": "Slow the video when the bottle is being picked up.", "note": "Slow down the bottle pickup.", "type": "change", "category": "pacing", "priority": "medium", "is_global": False, "withdrawn": False, "confidence": 0.9, "segment_start_sec": 0.0, "speaker": "Speaker 1"},
+            {"quote": "Increase the contrast of the overall video.", "note": "Increase contrast across the video.", "type": "change", "category": "color", "priority": "medium", "is_global": True, "withdrawn": False, "confidence": 0.9, "segment_start_sec": 14.0, "speaker": "Speaker 1"},
+        ]}
+
+    monkeypatch.setattr(extraction, "call_llm_json", fake_llm)
+
+    items = extraction.extract_feedback(transcript)
+
+    assert len(items) == 3
+    assert [item.spoken_timecode_sec for item in items] == [None, 5.0, None]
+    assert len(captured_prompts) == 1
+    assert '"speaker": "Host"' not in captured_prompts[0]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

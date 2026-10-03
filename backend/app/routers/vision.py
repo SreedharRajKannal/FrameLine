@@ -165,7 +165,19 @@ def generate_edits_endpoint(meeting_id: str, req: GenerateEditsRequest | None = 
 
     items = [FeedbackItem.model_validate(item) for item in items_raw]
     v_id = req.video_id if req and req.video_id else ""
-    edits = generate_edit_instructions(meeting_id=meeting_id, items=items, video_id=v_id)
+    try:
+        edits = generate_edit_instructions(meeting_id=meeting_id, items=items, video_id=v_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Edit generation failed: {exc}") from exc
+    actionable = [
+        item for item in items
+        if item.type == "change" or item.category in ("color", "pacing", "edit", "text_graphics", "sound")
+    ]
+    if actionable and not edits:
+        raise HTTPException(
+            status_code=502,
+            detail="Qwen returned no edit instructions for actionable feedback. Check model availability and server logs.",
+        )
     return edits
 
 
