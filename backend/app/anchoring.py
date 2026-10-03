@@ -111,6 +111,10 @@ _PATTERNS: list[tuple[str, str]] = [
     ("ms_colon",   r"\b(?P<m>\d{1,2}):(?P<s>\d{2})\b"),
     # "at 30 seconds" / "at 90 seconds"
     ("at_seconds", r"\bat\s+(?P<s>\d+)\s+seconds?\b"),
+    # "at five seconds" / "at the five-second mark"
+    ("at_seconds_word", r"\bat\s+(?:the\s+)?(?P<phrase>zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)[ -]+seconds?\b"),
+    ("seconds_mark_digit", r"\b(?:at\s+(?:the\s+)?)?(?P<s>\d+)[ -]+seconds?\s+mark\b"),
+    ("seconds_mark_word", r"\b(?:at\s+(?:the\s+)?)?(?P<phrase>zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)[ -]+seconds?\s+mark\b"),
     # "at the X minute mark" / "around the X minute mark"
     ("minute_mark_digit", r"\b(?:around\s+the\s+|at\s+the\s+)?(?P<m>\d+)\s+minute\s+mark\b"),
     # "X minutes in" / "X minute in"
@@ -163,6 +167,14 @@ def parse_spoken_time(text: str) -> float | None:
 
         if name == "at_seconds":
             return float(gd["s"])
+
+        if name in ("seconds_mark_digit",):
+            return float(gd["s"])
+
+        if name in ("at_seconds_word", "seconds_mark_word"):
+            value = _word_to_int(gd["phrase"].split()[0])
+            if value is not None:
+                return float(value)
 
         if name in ("minute_mark_digit", "minutes_in_digit"):
             return float(int(gd["m"]) * 60)

@@ -138,15 +138,46 @@ class TestEDL:
 
         # Check colors in comment lines
         comment_lines = [l for l in lines if l.startswith("|C:")]
-        assert "ResolveColorRed" in comment_lines[0]   # change = Red
-        assert "ResolveColorRed" in comment_lines[1]    # change = Red (global)
+        assert "ResolveColorRed" in comment_lines[0]    # global change = Red
+        assert "ResolveColorRed" in comment_lines[1]   # timed change = Red
         assert "ResolveColorGreen" in comment_lines[2]  # approval = Green
 
         # Check global item has [GLOBAL] in marker name
-        assert "[GLOBAL]" in comment_lines[1]
+        assert "[GLOBAL]" in comment_lines[0]
 
-        # Check marker duration
-        assert "|D:1" in comment_lines[0]
+    def test_global_marker_is_first_in_edl(self):
+        from backend.app.exporters.edl import build_edl
+        from backend.app.models import FeedbackItem, ProjectSettings
+
+        global_item = FeedbackItem(
+            id="global-first",
+            meeting_id="global-order",
+            quote="Increase the overall contrast.",
+            note="Increase contrast throughout the video.",
+            type="change",
+            category="color",
+            segment_start_sec=12.0,
+            is_global=True,
+            status="approved",
+        )
+        timed_item = FeedbackItem(
+            id="timed-second",
+            meeting_id="global-order",
+            quote="Zoom in at five seconds.",
+            note="Zoom at five seconds.",
+            type="change",
+            category="edit",
+            segment_start_sec=0.0,
+            anchor_sec=5.0,
+            status="approved",
+        )
+
+        edl = build_edl([timed_item, global_item], ProjectSettings(), "Test")
+        comments = [line for line in edl.splitlines() if line.startswith("|C:")]
+
+        assert "[GLOBAL]" in comments[0]
+        assert "[GLOBAL]" not in comments[1]
+        assert "|D:1" in comments[0]
 
     def test_build_edl_filters_non_approved(self):
         from backend.app.exporters.edl import build_edl
@@ -334,6 +365,29 @@ class TestTranscriptParser:
         assert t.segments[0].speaker == "Speaker A"
         assert t.segments[0].text == "This is the first line"
         assert t.segments[1].start_sec == 150.0  # 2*60 + 30
+
+    def test_multiline_timestamp_speaker_transcript(self):
+        from backend.app.ingest import parse_uploaded_transcript
+
+        text = (
+            "[00:00]\n\nSpeaker 1\n"
+            "Slow the video when the bottle is being picked up. Also add a zoom-in effect at five-second mark.\n\n"
+            "[00:12]\n\nSpeaker 1\nAnd also\n\n"
+            "[00:14]\n\nSpeaker 1\nIncrease the contrast of the overall video.\n\n"
+            "[00:14]\n\nHost\nin\n"
+        )
+
+        transcript = parse_uploaded_transcript("review.txt", text.encode())
+
+        assert [(s.start_sec, s.speaker) for s in transcript.segments] == [
+            (0.0, "Speaker 1"),
+            (12.0, "Speaker 1"),
+            (14.0, "Speaker 1"),
+            (14.0, "Host"),
+        ]
+        assert "five-second mark" in transcript.segments[0].text
+        from backend.app.anchoring import parse_spoken_time
+        assert parse_spoken_time(transcript.segments[0].text) == 5.0
 
     def test_text_plain_timestamp(self):
         from backend.app.ingest import parse_uploaded_transcript

@@ -80,3 +80,28 @@ try:
     app.include_router(privacy.router, prefix="/api")
 except ImportError:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Video indexing & Vision router (Phase 2 & 3)
+# ---------------------------------------------------------------------------
+try:
+    from backend.app.routers import video as video_router
+    app.include_router(video_router.router, prefix="/api")
+except ImportError:
+    pass
+
+try:
+    from backend.app.routers import vision as vision_router
+    app.include_router(vision_router.router, prefix="/api")
+except ImportError:
+    pass
+
+# Mount static preview files directory
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+previews_path = Path("data/previews")
+previews_path.mkdir(parents=True, exist_ok=True)
+app.mount("/data/previews", StaticFiles(directory=str(previews_path)), name="previews")
+

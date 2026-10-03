@@ -16,11 +16,18 @@ env/
 # Environment
 .env
 *.env
+!.env.example
+
+# Local uploaded videos, previews, and generated runtime data
+/data/
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+
+# Downloaded local model weights
+*.pt
 
 # Node / Frontend
 node_modules/

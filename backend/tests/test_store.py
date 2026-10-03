@@ -18,9 +18,17 @@ from backend.app.models import FeedbackItem, ProjectSettings, Transcript  # noqa
 
 @pytest.fixture(autouse=True)
 def fresh_db():
-    """Re-initialise the DB before every test."""
+    """Re-initialise the DB and clear tables before every test."""
     store.init_db()
+    with store._get_conn() as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        for table in ["edit_instructions", "items", "settings", "meetings", "frame_descriptions", "video_context", "entities", "detections", "frames", "shots", "videos"]:
+            conn.execute(f"DELETE FROM {table}")
+        conn.execute("PRAGMA foreign_keys = ON")
     yield
+
+
+
 
 
 # ---------------------------------------------------------------------------

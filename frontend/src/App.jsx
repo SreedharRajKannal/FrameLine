@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
-  postReanchor, importTranscript, fetchMeetilyStatus,
-  exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle
+  postReanchor, importTranscript, uploadVideo, linkMeetingVideo, fetchMeetilyStatus,
+  exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle,
+  generateEditInstructions, fetchEditInstructions,
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
+import VideoContextPanel from './components/VideoContextPanel.jsx'
+import EditInstructionCard from './components/EditInstructionCard.jsx'
+
 
 // ─────────────────────────────────────────────────────────
 // Toast context (simple local state)
@@ -55,7 +59,7 @@ function ItemTimecode({ item, settings }) {
 // ─────────────────────────────────────────────────────────
 // Single item card
 // ─────────────────────────────────────────────────────────
-function ItemCard({ item, settings, selected, onSelect }) {
+function ItemCard({ item, settings, selected, onSelect, editInstruction }) {
   return (
     <div
       className={[
@@ -82,6 +86,25 @@ function ItemCard({ item, settings, selected, onSelect }) {
       </div>
 
       <div className="item-note">{item.note}</div>
+      {editInstruction && (
+        <div className="item-edit-resolution">
+          <span className="item-edit-resolution-label">Qwen</span>
+          <span>{editInstruction.effect.replaceAll('_', ' ')}</span>
+          {editInstruction.target_entity && <span>Target: {editInstruction.target_entity}</span>}
+          <button
+            className="item-edit-time"
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelect(item)
+            }}
+          >
+            {editInstruction.is_global
+              ? 'Global · from start'
+              : `${editInstruction.start_sec.toFixed(1)}s–${editInstruction.end_sec.toFixed(1)}s`}
+          </button>
+          <span className={`badge badge-status-${editInstruction.status}`}>{editInstruction.status}</span>
+        </div>
+      )}
       <div className="item-quote">{item.quote}</div>
 
       <div className="item-confidence">
@@ -314,6 +337,9 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedItem, setSelectedItem] = useState(null)
+  const [editInstructions, setEditInstructions] = useState([])
+  const [generatingEdits, setGeneratingEdits] = useState(false)
+  const [editError, setEditError] = useState(null)
   const [videoUrl, setVideoUrl] = useState(null)
   const [tab, setTab] = useState('items') // 'items' | 'settings'
   const [filterReview, setFilterReview] = useState(false)
@@ -322,9 +348,14 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
   useEffect(() => {
     setLoading(true)
+    setData(null)
     setSelectedItem(null)
     fetchMeeting(meetingId)
-      .then(d => setData(d))
+      .then(d => {
+        setData(d)
+        setVideoUrl(d.video_id ? `/api/videos/${d.video_id}/stream` : null)
+        fetchEditInstructions(meetingId).then(setEditInstructions).catch(() => setEditInstructions([]))
+      })
       .catch(e => {
         if (e.message.includes('404')) {
           toast('Meeting not found (it may have been deleted)', 'error')
@@ -336,6 +367,24 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       .finally(() => setLoading(false))
   }, [meetingId])
 
+  useEffect(() => {
+    if (!meetingId || data?.status !== 'processing') return
+    let active = true
+    const refresh = async () => {
+      try {
+        const latest = await fetchMeeting(meetingId)
+        if (active) setData(latest)
+      } catch (error) {
+        if (active) toast(`Transcript processing status failed: ${error.message}`, 'error')
+      }
+    }
+    const timer = setInterval(refresh, 1500)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [meetingId, data?.status, toast])
+
   const handleItemUpdated = useCallback((updated) => {
     setData(d => ({
       ...d,
@@ -343,6 +392,35 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
     }))
     setSelectedItem(updated)
   }, [])
+
+  const handleGenerateEdits = async () => {
+    setGeneratingEdits(true)
+    setEditError(null)
+    try {
+      const generated = await generateEditInstructions(meetingId, data.video_id || null)
+      setEditInstructions(generated)
+      if (generated.length === 0) {
+        setEditError('Qwen returned no edit instructions. Check Ollama and confirm the transcript has actionable change items.')
+      } else {
+        toast(`Generated ${generated.length} edit instruction${generated.length === 1 ? '' : 's'}`, 'success')
+      }
+    } catch (error) {
+      setEditError(`Edit generation failed: ${error.message}`)
+      toast(`Edit generation failed: ${error.message}`, 'error')
+    } finally {
+      setGeneratingEdits(false)
+    }
+  }
+
+  const handleEditInstructionUpdated = (updated) => {
+    setEditInstructions(current => [
+      updated,
+      ...current.filter(instruction => instruction.id !== updated.id),
+    ].sort((a, b) => Number(Boolean(b.is_global)) - Number(Boolean(a.is_global)) || a.start_sec - b.start_sec))
+    fetchMeeting(meetingId).then(setData).catch(error => {
+      toast(`Instruction saved, but items could not refresh: ${error.message}`, 'error')
+    })
+  }
 
   const handleSelectItem = (item) => {
     setSelectedItem(item)
@@ -352,9 +430,22 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
     }
   }
 
-  const handleVideoFile = (e) => {
+  const handleVideoFile = async (e) => {
     const f = e.target.files[0]
-    if (f) setVideoUrl(URL.createObjectURL(f))
+    if (!f) return
+
+    try {
+      const upload = await uploadVideo(f)
+      const videoId = upload.video_id
+      if (!videoId) throw new Error('Upload response missing video_id')
+
+      await linkMeetingVideo(meetingId, videoId)
+      setData(d => ({ ...d, video_id: videoId }))
+      setVideoUrl(`/api/videos/${videoId}/stream`)
+      toast('Video uploaded and linked; YOLO indexing started', 'success')
+    } catch (err) {
+      toast(`Video upload failed: ${err.message}`, 'error')
+    }
   }
 
   const handleApproveAllHighConf = async () => {
@@ -387,8 +478,10 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
   const settings = data.settings || {}
   let items = data.items || []
-  // Sort needs_review first
+  const instructionsByItem = Object.fromEntries(editInstructions.map(instruction => [instruction.item_id, instruction]))
+  // Put global instructions at the beginning, then surface items needing review.
   items = [...items].sort((a, b) => {
+    if (a.is_global !== b.is_global) return a.is_global ? -1 : 1
     if (a.needs_review && !b.needs_review) return -1
     if (!a.needs_review && b.needs_review) return 1
     return 0
@@ -401,6 +494,12 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       <div className="tab-bar">
         <button className={`tab ${tab === 'items' ? 'active' : ''}`} onClick={() => setTab('items')}>
           Items ({data.items?.length || 0})
+        </button>
+        <button className={`tab ${tab === 'vision' ? 'active' : ''}`} onClick={() => setTab('vision')}>
+          📹 Video Context
+        </button>
+        <button className={`tab ${tab === 'edits' ? 'active' : ''}`} onClick={() => setTab('edits')}>
+          Edit Instructions ({editInstructions.length})
         </button>
         <button className={`tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
           ⚙ Settings
@@ -427,8 +526,45 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
             toast={toast}
           />
         </div>
+      ) : tab === 'vision' ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          <VideoContextPanel
+            videoId={data.video_id || ''}
+            onSeek={(tSec) => {
+              if (videoRef.current) videoRef.current.currentTime = tSec
+            }}
+          />
+        </div>
+      ) : tab === 'edits' ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          <div className="items-header">
+            <span className="items-count">Qwen edit instructions</span>
+            <span className="items-spacer" />
+            <button className="btn btn-primary btn-sm" onClick={handleGenerateEdits} disabled={generatingEdits || !data.items?.length}>
+              {generatingEdits ? <><span className="spinner" /> Generating…</> : 'Generate from feedback'}
+            </button>
+          </div>
+          {editError && <div className="alert alert-error">{editError}</div>}
+          {editInstructions.length === 0 ? (
+            <div className="empty-state">
+              No edit instructions yet. Generate them from the transcript feedback.
+              {data.video_id ? ' The linked video context and entity intervals will be included in Qwen’s prompt.' : ' Link a video to include visual context.'}
+            </div>
+          ) : [...editInstructions].sort((a, b) => Number(Boolean(b.is_global)) - Number(Boolean(a.is_global)) || a.start_sec - b.start_sec).map(instruction => (
+            <EditInstructionCard
+              key={instruction.id}
+              instruction={instruction}
+              onUpdate={handleEditInstructionUpdated}
+              onSeek={(timeSec) => {
+                if (videoRef.current) videoRef.current.currentTime = timeSec
+              }}
+            />
+          ))}
+        </div>
       ) : (
+
         <div className="meeting-layout" style={{ flex: 1, overflow: 'hidden' }}>
+
           {/* ── Video pane ── */}
           <div className="video-pane">
             <div className="video-header">
@@ -495,7 +631,13 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
             <div className="items-list">
               {items.length === 0 ? (
-                <div className="empty-state">No items yet.<br />Run pipeline or import a transcript.</div>
+                <div className="empty-state">
+                  {data.status === 'processing'
+                    ? 'Transcript imported. Extracting feedback items…'
+                    : data.status === 'failed'
+                      ? 'Feedback extraction failed. Re-import the transcript or check the backend log.'
+                      : 'No feedback items were extracted from this transcript.'}
+                </div>
               ) : (
                 items.map(item => (
                   <ItemCard
@@ -503,6 +645,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
                     item={item}
                     settings={settings}
                     selected={selectedItem?.id === item.id}
+                    editInstruction={instructionsByItem[item.id]}
                     onSelect={handleSelectItem}
                   />
                 ))

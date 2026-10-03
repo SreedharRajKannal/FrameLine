@@ -218,11 +218,22 @@ async def import_meeting(
                 _log.info("Saved %d items for %s", len(items), transcript.meeting_id)
             else:
                 _log.warning("Pipeline returned 0 items for %s", transcript.meeting_id)
-                
+
+            # Auto-link latest indexed video if this meeting has none yet
+            try:
+                if not store.get_meeting_video_id(transcript.meeting_id):
+                    latest_vid = store.get_latest_indexed_video()
+                    if latest_vid:
+                        store.link_video_to_meeting(transcript.meeting_id, latest_vid)
+                        _log.info("Auto-linked video %s to meeting %s", latest_vid, transcript.meeting_id)
+            except Exception as link_exc:
+                _log.warning("Auto-link video failed (non-fatal): %s", link_exc)
+
             store.update_meeting_status(transcript.meeting_id, "completed")
         except Exception as exc:
             _log.exception("Background _process failed for %s: %s", transcript.meeting_id, exc)
             store.update_meeting_status(transcript.meeting_id, "failed")
+
 
     background_tasks.add_task(_process)
 

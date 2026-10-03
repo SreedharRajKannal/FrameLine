@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from backend.app import config
+from backend.app.model_lock import LOCAL_INFERENCE_LOCK
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,8 @@ def _call_ollama(prompt: str, system: str, json_mode: bool) -> str:
     logger.debug("Calling Ollama: model=%s url=%s", config.OLLAMA_MODEL, url)
 
     try:
-        resp = httpx.post(url, json=payload, timeout=_TIMEOUT)
+        with LOCAL_INFERENCE_LOCK:
+            resp = httpx.post(url, json=payload, timeout=_TIMEOUT)
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise RuntimeError(f"Ollama HTTP error {exc.response.status_code}: {exc.response.text}") from exc

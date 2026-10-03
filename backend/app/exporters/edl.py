@@ -23,29 +23,34 @@ COLOR_MAP = {
 }
 
 
-def build_edl(items: list[FeedbackItem], settings: ProjectSettings, title: str) -> str:
+def build_edl(
+    items: list[FeedbackItem],
+    settings: ProjectSettings,
+    title: str,
+    edit_instructions: list[dict] | None = None,
+) -> str:
     """
     Build a CMX 3600 EDL string with colour-coded markers for DaVinci Resolve.
 
     Only approved, non-withdrawn items are included.
     Marker colours: change=Red, question=Blue, approval=Green.
-
-    Args:
-        items:    Full list of FeedbackItems for a meeting.
-        settings: ProjectSettings (fps, start_timecode, etc.).
-        title:    Meeting / project title for the EDL header.
-
-    Returns:
-        A CMX 3600 EDL string ready to write to a .edl file.
     """
     fps = settings.fps
     version = settings.version_label
+
+    # Build edit instruction lookup map: item_id -> instruction dict
+    edits_by_item = {}
+    if edit_instructions:
+        for inst in edit_instructions:
+            if inst.get("status") in ("approved", "pending"):
+                edits_by_item[inst["item_id"]] = inst
 
     # Filter: only approved and non-withdrawn
     exportable = [
         item for item in items
         if item.status == "approved" and not item.withdrawn
     ]
+    exportable.sort(key=lambda item: (not item.is_global, item.anchor_sec or 0.0))
 
     # EDL header
     edl_title = f"{title} - {version}" if title else version
@@ -58,22 +63,34 @@ def build_edl(items: list[FeedbackItem], settings: ProjectSettings, title: str) 
     event_num = 1
 
     for item in exportable:
+        inst = edits_by_item.get(item.id)
+        effect_prefix = ""
+        if inst:
+            eff_name = inst.get("effect", "").upper().replace("_", " ")
+            target = inst.get("target_entity", "")
+            s_sec = inst.get("start_sec", 0.0)
+            e_sec = inst.get("end_sec", 0.0)
+            
+            m_s, ss_s = int(s_sec // 60), int(s_sec % 60)
+            m_e, ss_e = int(e_sec // 60), int(e_sec % 60)
+            tc_range = f"{m_s}:{ss_s:02d}-{m_e}:{ss_e:02d}"
+            
+            target_str = f" {target}" if target else ""
+            effect_prefix = f"[{eff_name}]{target_str} {tc_range} "
+
         # Determine timecode
         if item.is_global or item.anchor_sec is None:
-            # Global items go at start timecode (0 seconds from start)
             tc = settings.start_timecode
-            marker_name = f"[GLOBAL] {version} - {item.note}"
+            marker_name = f"{effect_prefix}[GLOBAL] {version} - {item.note}".strip()
         else:
             tc = seconds_to_timecode(item.anchor_sec, fps, settings.start_timecode)
-            marker_name = f"{version} - {item.note}"
+            marker_name = f"{effect_prefix}{version} - {item.note}".strip()
 
         color = COLOR_MAP.get(item.type, "Red")
 
         # CMX 3600 event line
-        # Format: EVENT_NUM  REEL  TRACK  TRANSITION  SRC_IN  SRC_OUT  REC_IN  REC_OUT
         event_line = f"{event_num:03d}  001      V     C        {tc} {tc} {tc} {tc}"
         # Resolve marker comment line
-        # Format: |C:ResolveColor<Color> |M:<marker note> |D:1
         comment_line = f"|C:ResolveColor{color} |M:{marker_name} |D:1"
 
         lines.append(event_line)
@@ -83,3 +100,4 @@ def build_edl(items: list[FeedbackItem], settings: ProjectSettings, title: str) 
         event_num += 1
 
     return "\n".join(lines)
+

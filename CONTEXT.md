@@ -127,6 +127,14 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35 ✅ STEP 1 DONE: repo skeleton, CLAUDE.md, AGENTS.md, .gitignore, .env.example, models.py, config.py, store.py, main.py, all teammate stubs (meetily_client, ingest, llm, extraction, anchoring, pipeline, redaction, routers/ingest, routers/export, routers/privacy, exporters/*), requirements.txt, samples/expected_items.json, samples/sample_transcript.json
 - 2026-10-02 16:35 ✅ STEP 2 DONE: routers/review.py (health, meetings CRUD, PATCH item, PUT settings, POST reanchor, POST reprocess), backend/tests/test_store.py, backend/tests/test_review.py
 - 2026-10-02 19:25 ✅ WEBHOOK SETUP: Identified Meetily private IP restriction (HTTP 400). Registered public tunnel destination with Meetily API (201 Created). Auto-update script for .env created. All 79 backend tests passing.
+- 2026-10-03 04:00 ✅ PHASE 3 VISION & EDIT EFFECTS COMPLETE: Built MiniCPM-V vision pass with frame deduplication & 0.6s soft thinking budget, video context timeline & entity indexer ("red car: 0:12-0:18"), Qwen edit instruction engine with closed effect vocabulary and code-level ffmpeg filter compiler, side-by-side 480p preview renderer, Resolve marker exporter, VideoContextPanel & EditInstructionCard React UI components, benchmark script, and evaluation harness (109/109 backend unit tests passing).
+- 2026-10-03 15:40 ✅ VIDEO CONTEXT PIPELINE FIX: indexed videos now trigger the frame-sampling vision flow automatically, sending sampled frame images to the local vision LLM instead of the whole video, then building scene/entity context for the editor UI and edit-generation prompts.
+- 2026-10-03 ✅ GIT IGNORE: local uploads and generated runtime artifacts under `data/` are ignored; `.env.example` remains trackable.
+- 2026-10-03 ✅ YOLO-FIRST VISION: nano YOLO + ByteTrack detection at configurable sampling FPS, per-track color/entity intervals, persisted boxes/masks, detector-first context, optional low-frequency VLM, and paired interval evaluation.
+- 2026-10-03 ✅ YOLO-ONLY DEFAULT AND UI REFRESH: disabled VLM/caption calls by default, fixed video-link context race and legacy-video detector backfill, exposed indexing/extraction status to the UI, and refreshes imported feedback when background processing completes. Text, detector, VLM, caption, and model unload calls share `LOCAL_INFERENCE_LOCK`.
+- 2026-10-03 ✅ CONTEXTUAL FRAME ANALYSIS: enabled MiniCPM-V by default alongside YOLO, sampling each frame every 2.5 seconds without an extra thinking request or dedup skip; timeline summaries now include scene/action/mood/text/lighting.
+- 2026-10-03 ✅ TRANSCRIPT→QWEN EDIT FLOW: parsed multiline timestamp/speaker imports, recovered missed compound actions and spoken second marks, added visible Edit Instructions UI/API errors, passed saved video context into Qwen, preserved explicit target times, and clamped context scenes to video duration.
+
 ### Karthik
 - 2026-10-02 17:00 ✅ PRE-WORK: Read all Meetily docs (authentication, webhooks-and-sse, api-reference, events, enable-and-connect). Key findings:
   - Signature headers: `X-Meetily-Signature: sha256=<hex HMAC-SHA256>`, `X-Meetily-Timestamp: <unix_seconds>`
@@ -165,6 +173,8 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 17:05, Karthik: meetily_client.py normalizes segment field names defensively (tries start_sec, start, start_time, start_ms) since we cannot verify TranscriptSegmentDto shape without live openapi.json.
 - 2026-10-02 17:05, Karthik: processed_events dedup table shares the same DB_PATH as the main store (not a separate file) to keep things simple.
 - 2026-10-02 17:05, Karthik: EDL marker comment format is `|C:ResolveColor<Color> |M:<note> |D:1` based on community docs — needs verification against a real Resolve export.
+- 2026-10-03 04:00, Sreedhar: Closed effect vocabulary is compiled strictly at code level in Python using clamped parameter bounds to prevent LLMs from injecting unsafe raw ffmpeg filter strings.
+
 
 ## 12. Open questions / blockers (append only: `name: question`)
 

@@ -45,16 +45,22 @@ def list_meetings() -> list[dict]:
 
 @router.get("/meetings/{meeting_id}")
 def get_meeting(meeting_id: str) -> dict:
-    """Return transcript, items, and settings for a meeting."""
+    """Return transcript, items, settings, and video info for a meeting."""
     transcript = store.get_transcript(meeting_id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
     items = store.get_items(meeting_id)
     settings = store.get_settings(meeting_id)
+    meeting = store.get_meeting(meeting_id)
+    video_id = store.get_meeting_video_id(meeting_id)
+    video = store.get_video(video_id).model_dump() if video_id else None
     return {
         "transcript": transcript.model_dump(),
         "items": [i.model_dump() for i in items],
         "settings": settings.model_dump(),
+        "status": meeting["status"] if meeting else "completed",
+        "video_id": video_id,
+        "video": video,
     }
 
 
