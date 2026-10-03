@@ -171,6 +171,16 @@ def test_qwen_edit_generation_uses_context_and_keeps_explicit_time(monkeypatch):
     assert updated_item["needs_review"] is False
     assert updated_item["anchor_sec"] == 7.0
 
+    interval_response = client.patch(
+        f"/api/edits/{generated[0]['id']}",
+        json={"start_sec": 6.5, "end_sec": 9.0},
+    )
+    assert interval_response.status_code == 200
+    assert interval_response.json()["start_sec"] == 6.5
+    assert interval_response.json()["end_sec"] == 9.0
+    refreshed_item = client.get(f"/api/meetings/{meeting_id}").json()["items"][0]
+    assert refreshed_item["anchor_sec"] == 6.5
+
 
 def test_global_edit_instruction_is_persisted_at_video_start(monkeypatch):
     from backend.app import config, edit_instructions, vision_pass

@@ -5,9 +5,15 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
   const [inst, setInst] = useState(instruction)
   const [rendering, setRendering] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [startSec, setStartSec] = useState(instruction.start_sec)
+  const [endSec, setEndSec] = useState(instruction.end_sec)
+  const [savingInterval, setSavingInterval] = useState(false)
+  const [intervalError, setIntervalError] = useState(null)
 
   useEffect(() => {
     setInst(instruction)
+    setStartSec(instruction.start_sec)
+    setEndSec(instruction.end_sec)
   }, [instruction])
 
   async function handleStatusChange(newStatus) {
@@ -35,6 +41,7 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
 
   async function handleSelectInterval(interval) {
     try {
+      setIntervalError(null)
       const updated = await patchEditInstruction(inst.id, {
         start_sec: interval.start_sec,
         end_sec: interval.end_sec,
@@ -44,6 +51,33 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
       if (onUpdate) onUpdate(updated)
     } catch (err) {
       alert(`Error setting interval: ${err.message}`)
+    }
+  }
+
+  async function handleSaveInterval(event) {
+    event.preventDefault()
+    const start = Number(startSec)
+    const end = Number(endSec)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+      setIntervalError('Enter valid times: start must be zero or later, and end must be after start.')
+      return
+    }
+
+    setSavingInterval(true)
+    setIntervalError(null)
+    try {
+      const updated = await patchEditInstruction(inst.id, {
+        start_sec: start,
+        end_sec: end,
+      })
+      setInst(updated)
+      setStartSec(updated.start_sec)
+      setEndSec(updated.end_sec)
+      if (onUpdate) onUpdate(updated)
+    } catch (err) {
+      setIntervalError(`Could not save interval: ${err.message}`)
+    } finally {
+      setSavingInterval(false)
     }
   }
 
@@ -70,6 +104,35 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
             {inst.is_global ? 'from beginning · ' : ''}{inst.start_sec.toFixed(1)}s - {inst.end_sec.toFixed(1)}s
           </button>
         </div>
+
+        <form className="interval-editor" onSubmit={handleSaveInterval}>
+          <label>
+            <span>Start (s)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={startSec}
+              onChange={event => setStartSec(event.target.value)}
+              aria-label="Instruction start time in seconds"
+            />
+          </label>
+          <label>
+            <span>End (s)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={endSec}
+              onChange={event => setEndSec(event.target.value)}
+              aria-label="Instruction end time in seconds"
+            />
+          </label>
+          <button className="btn btn-sm btn-outline" type="submit" disabled={savingInterval}>
+            {savingInterval ? 'Saving…' : 'Save time'}
+          </button>
+        </form>
+        {intervalError && <div className="alert alert-error interval-error">{intervalError}</div>}
 
         {inst.filter_string && (
           <div className="filter-string-code">
