@@ -9,7 +9,6 @@ import logging
 import math
 import os
 import subprocess
-import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -19,13 +18,14 @@ from pydantic import BaseModel, Field
 
 from backend.app import config, store
 from backend.app.models import Video
+from backend.app.model_lock import LOCAL_INFERENCE_LOCK
 from backend.app.video_index import _get_ffmpeg_bin, get_video_dir
 
 
 logger = logging.getLogger(__name__)
 
 # Global thread lock to prevent concurrent vision and text LLM calls
-OLLAMA_MODEL_LOCK = threading.Lock()
+OLLAMA_MODEL_LOCK = LOCAL_INFERENCE_LOCK
 
 
 class ObjectDetail(BaseModel):
@@ -38,6 +38,7 @@ class ObjectDetail(BaseModel):
 
 class FrameDescription(BaseModel):
     scene: str
+    mood: str | None = None
     objects: list[ObjectDetail] = Field(default_factory=list)
     people: list[str] = Field(default_factory=list)
     text_on_screen: str | None = None
@@ -53,7 +54,8 @@ def unload_ollama_model(model_name: str) -> None:
         return
     url = f"{config.OLLAMA_URL.rstrip('/')}/api/chat"
     try:
-        httpx.post(url, json={"model": model_name, "keep_alive": 0}, timeout=10)
+        with OLLAMA_MODEL_LOCK:
+            httpx.post(url, json={"model": model_name, "keep_alive": 0}, timeout=10)
         logger.info("Unloaded Ollama model '%s'", model_name)
     except Exception as exc:
         logger.warning("Failed to unload model '%s': %s", model_name, exc)
@@ -252,11 +254,15 @@ def describe_single_frame(
     img_b64 = base64.b64encode(frame_path.read_bytes()).decode("utf-8")
 
     prompt = (
-        "Analyze this video frame. "
+        "Describe this video frame as part of an editor's continuous timeline, not as a list of detected categories. "
         f"Context from previous frame: '{prev_summary}'.\n"
+        "Explain what is happening, what the main subject is doing, how the shot relates to the previous frame, "
+        "and any visible product, setting, camera movement, or on-screen text. Be concrete and avoid generic labels. "
+        "If uncertain, describe only visible evidence.\n"
         "Output ONLY valid JSON matching this schema:\n"
         "{\n"
         '  "scene": "One sentence summary of visual scene",\n'
+        '  "mood": "visual mood or atmosphere",\n'
         '  "objects": [{"name": "normalized lowercase singular name", "color": "color", "position": "left|center|right|top|bottom", "size": "small|medium|large", "attributes": ["attr"]}],\n'
         '  "people": ["person description"],\n'
         '  "text_on_screen": "any visible text or null",\n'
@@ -268,7 +274,9 @@ def describe_single_frame(
     )
 
     system_prompt = (
-        "You are a precise computer vision frame analyst for video editing. "
+        "You are a visual-story analyst helping a video editor understand a sequence of sampled frames. "
+        "Prioritize scene meaning, action, continuity, composition, product/subject details, and readable text. "
+        "Do not return generic object lists in place of a scene description. "
         "Always output valid JSON. Use normalized singular lowercase object names (e.g. 'red car', 'glass bottle')."
     )
 
@@ -349,6 +357,12 @@ def run_vision_pass(
     Main vision pass background job.
     Resumable (skips described frames) and safe.
     """
+    if not config.VISION_VLM_ENABLED and not config.MOCK_VISION_LLM and not config.MOCK_LLM:
+        logger.info("[%s] VLM pass disabled; keeping detector-derived context", video_id[:8])
+        if progress_cb:
+            progress_cb(100.0, "VLM pass disabled")
+        return store.get_frame_descriptions(video_id)
+
     if config.MOCK_VISION_LLM or config.MOCK_LLM:
         logger.info("[%s] MOCK_VISION_LLM=1 – using canned frame descriptions", video_id[:8])
         if progress_cb:
@@ -439,6 +453,5 @@ def generate_video_context_pipeline(
     from backend.app.video_context import build_video_context
 
     descriptions = run_vision_pass(video_id, video_path, progress_cb=progress_cb)
-    if descriptions:
-        build_video_context(video_id)
+    build_video_context(video_id)
     return descriptions

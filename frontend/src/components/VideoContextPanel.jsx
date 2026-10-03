@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { fetchVisionStatus, fetchVideoContext, fetchEntities, triggerVisionPass } from '../api'
 
 export default function VideoContextPanel({ videoId, onSeek }) {
@@ -7,24 +7,32 @@ export default function VideoContextPanel({ videoId, onSeek }) {
   const [entities, setEntities] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const loadedVideoId = useRef('')
 
   useEffect(() => {
+    setStatus(null)
+    setContext(null)
+    setEntities([])
+    setError(null)
+    loadedVideoId.current = ''
     if (!videoId) return
-    loadData()
-    const timer = setInterval(pollStatus, 3000)
+    pollStatus()
+    const timer = setInterval(pollStatus, 2000)
     return () => clearInterval(timer)
   }, [videoId])
 
   async function loadData() {
     try {
-      const s = await fetchVisionStatus(videoId).catch(() => null)
-      if (s) setStatus(s)
-      const ctx = await fetchVideoContext(videoId).catch(() => null)
-      if (ctx) setContext(ctx)
-      const ents = await fetchEntities(videoId).catch(() => [])
-      if (ents) setEntities(ents)
+      const [ctx, ents] = await Promise.all([
+        fetchVideoContext(videoId),
+        fetchEntities(videoId),
+      ])
+      setContext(ctx)
+      setEntities(ents)
+      setError(null)
+      loadedVideoId.current = videoId
     } catch (err) {
-      logger.error(err)
+      setError(`Could not load video context: ${err.message}`)
     }
   }
 
@@ -33,16 +41,18 @@ export default function VideoContextPanel({ videoId, onSeek }) {
     const s = await fetchVisionStatus(videoId).catch(() => null)
     if (s) {
       setStatus(s)
-      if (s.status === 'completed' && (!context || !entities.length)) {
-        loadData()
-      }
+      if (s.status === 'completed' && loadedVideoId.current !== videoId) await loadData()
+      if (s.status === 'failed') setError(s.message || 'YOLO indexing failed')
     }
   }
 
-  async function handleRunVision() {
+  async function handleRunAnalysis() {
     if (!videoId) return
     setLoading(true)
     setError(null)
+    setContext(null)
+    setEntities([])
+    loadedVideoId.current = ''
     try {
       await triggerVisionPass(videoId)
       await pollStatus()
@@ -64,10 +74,10 @@ export default function VideoContextPanel({ videoId, onSeek }) {
   return (
     <div className="panel video-context-panel">
       <div className="panel-header">
-        <h3>📹 Video Context & MiniCPM-V Vision</h3>
-        {(!status || status.status === 'not_started') && (
-          <button className="btn btn-sm btn-primary" onClick={handleRunVision} disabled={loading}>
-            {loading ? 'Starting...' : '⚡ Run Vision Pass'}
+        <h3>Video Context & Frame Analysis</h3>
+        {status?.status !== 'running' && (
+          <button className="btn btn-sm btn-primary" onClick={handleRunAnalysis} disabled={loading}>
+            {loading ? 'Starting...' : context ? 'Re-analyze Frames' : 'Analyze Frames'}
           </button>
         )}
       </div>
@@ -85,7 +95,7 @@ export default function VideoContextPanel({ videoId, onSeek }) {
           </div>
           <p className="progress-text" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="spinner" style={{ width: 14, height: 14 }} />
-            <span>⏳ MiniCPM-V Analyzing Video Context: {status.progress_pct}%</span>
+            <span>YOLO indexing: {status.progress_pct}%</span>
             <span className="subtle">{status.message}</span>
           </p>
         </div>
@@ -97,6 +107,14 @@ export default function VideoContextPanel({ videoId, onSeek }) {
         <div className="video-summary-box">
           <p><strong>Global Context:</strong> {context.global_summary}</p>
         </div>
+      )}
+
+      {!context && status?.status === 'running' && (
+        <p className="subtle">Waiting for YOLO to finish indexing this video…</p>
+      )}
+
+      {!context && status?.status === 'completed' && !error && (
+        <p className="subtle">YOLO indexing completed; no context was returned.</p>
       )}
 
       {/* Entity Index */}

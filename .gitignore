@@ -26,6 +26,9 @@ env/
 *.sqlite
 *.sqlite3
 
+# Downloaded local model weights
+*.pt
+
 # Node / Frontend
 node_modules/
 dist/

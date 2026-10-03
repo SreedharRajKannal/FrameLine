@@ -39,3 +39,38 @@ def test_build_video_context_and_entity_resolution():
     rel_ctx = get_relevant_context("make the color pop when the red car comes", video_id=video_id)
     assert "red car" in rel_ctx
     assert "12.0" in rel_ctx or "18.0" in rel_ctx
+
+
+def test_vlm_timeline_summary_includes_scene_action_and_screen_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "vlm-context.db"))
+    store.init_db()
+    video_id = "test-vlm-context-details"
+    store.save_video(Video(video_id=video_id, filename="test.mp4", path="test.mp4"))
+    store.save_frame_description(video_id, 0.0, {
+        "scene": "A close product shot shows a glass bottle on a blue table.",
+        "action": "The bottle rotates slowly toward the camera.",
+        "mood": "Calm and premium.",
+        "text_on_screen": "New formula",
+        "lighting_and_palette": "Soft cool lighting with blue highlights.",
+        "objects": [{"name": "glass bottle", "color": "amber", "position": "center"}],
+        "changed_from_previous": False,
+    })
+
+    context = build_video_context(video_id)
+
+    summary = context["scene_segments"][0]["summary"]
+    assert "rotates slowly" in summary
+    assert "Calm and premium" in summary
+    assert "New formula" in summary
+    assert "blue highlights" in summary
+    assert "glass bottle" in context["entity_keys"]
+
+
+def test_default_vlm_samples_every_two_and_half_seconds(monkeypatch):
+    monkeypatch.delenv("VISION_FRAME_INTERVAL_SEC", raising=False)
+    monkeypatch.delenv("VISION_THINK_BUDGET_SEC", raising=False)
+    monkeypatch.delenv("VISION_DEDUP_THRESHOLD", raising=False)
+
+    assert config.VISION_FRAME_INTERVAL_SEC == 2.5
+    assert config.VISION_THINK_BUDGET_SEC == 0
+    assert config.VISION_DEDUP_THRESHOLD == 0

@@ -52,8 +52,16 @@ VIDEO_DATA_DIR: str = os.getenv("VIDEO_DATA_DIR", "data/videos")
 VISION_CONTEXT_ENABLED: bool = os.getenv("VISION_CONTEXT_ENABLED", "1") == "1"
 MOCK_VISION_LLM: bool = os.getenv("MOCK_VISION_LLM", "0") == "1"
 VISION_MODEL: str = os.getenv("VISION_MODEL", "minicpm-v4.5:8b")
-VISION_FRAME_INTERVAL_SEC: float = float(os.getenv("VISION_FRAME_INTERVAL_SEC", "2.0"))
+VISION_VLM_ENABLED: bool = os.getenv("VISION_VLM_ENABLED", "1") == "1"
+VISION_FRAME_INTERVAL_SEC: float = float(os.getenv("VISION_FRAME_INTERVAL_SEC", "2.5"))
 VISION_FRAME_MAX_EDGE: int = int(os.getenv("VISION_FRAME_MAX_EDGE", "768"))
-VISION_THINK_BUDGET_SEC: float = float(os.getenv("VISION_THINK_BUDGET_SEC", "0.6"))
-VISION_DEDUP_THRESHOLD: float = float(os.getenv("VISION_DEDUP_THRESHOLD", "5.0"))
+VISION_THINK_BUDGET_SEC: float = float(os.getenv("VISION_THINK_BUDGET_SEC", "0"))
+VISION_DEDUP_THRESHOLD: float = float(os.getenv("VISION_DEDUP_THRESHOLD", "0"))
+
+# YOLO detector and ByteTrack entity index
+DETECTOR_ENABLED: bool = os.getenv("DETECTOR_ENABLED", "1") == "1"
+DETECTOR_MODEL: str = os.getenv("DETECTOR_MODEL", "yolo11n.pt")
+DETECTOR_GLOSSARY_PATH: str = os.getenv("DETECTOR_GLOSSARY_PATH", "")
+DETECT_FPS: float = float(os.getenv("DETECT_FPS", "4"))
+DETECT_SEGMENTATION: bool = os.getenv("DETECT_SEGMENTATION", "0") == "1"
 

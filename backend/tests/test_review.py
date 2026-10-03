@@ -78,8 +78,25 @@ def test_get_meeting_returns_transcript_items_settings():
     assert "transcript" in data
     assert "items" in data
     assert "settings" in data
+    assert data["status"] == "completed"
     assert data["transcript"]["meeting_id"] == mid
     assert len(data["items"]) == 1
+
+
+def test_imported_transcript_finishes_with_items_visible():
+    response = client.post(
+        "/api/meetings/import",
+        files={"file": ("review.txt", b"[00:00:05] Client: Please make the product shot warmer.", "text/plain")},
+    )
+    assert response.status_code == 200
+    meeting_id = response.json()["meeting_id"]
+
+    detail = client.get(f"/api/meetings/{meeting_id}")
+
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "completed"
+    assert detail.json()["transcript"]["segments"][0]["text"] == "Please make the product shot warmer."
+    assert detail.json()["items"]
 
 
 # ---------------------------------------------------------------------------

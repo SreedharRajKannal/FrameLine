@@ -99,6 +99,38 @@ class TestCapShots:
 # ── Mock indexing pipeline ─────────────────────────────────────────────────────
 
 class TestMockIndex:
+    def test_linking_pending_video_does_not_start_duplicate_context_job(self, tmp_path, monkeypatch):
+        _fresh_db(tmp_path, monkeypatch)
+        from backend.app import store
+        from backend.app.models import Transcript, Video
+        from backend.app.routers.video import VideoLinkPayload, link_video_to_meeting
+
+        meeting_id = "m-link-pending"
+        video_id = "v-link-pending"
+        video_path = tmp_path / "pending.mp4"
+        video_path.write_bytes(b"fake video")
+        store.save_transcript(Transcript(meeting_id=meeting_id, segments=[]))
+        store.save_video(Video(
+            video_id=video_id,
+            filename="pending.mp4",
+            path=str(video_path),
+            index_status="running",
+        ))
+        calls = []
+
+        class TaskCollector:
+            def add_task(self, fn, *args, **kwargs):
+                calls.append((fn, args, kwargs))
+
+        link_video_to_meeting(
+            meeting_id,
+            VideoLinkPayload(video_id=video_id),
+            background_tasks=TaskCollector(),
+        )
+
+        assert store.get_meeting_video_id(meeting_id) == video_id
+        assert calls == []
+
     def test_mock_creates_shots(self, tmp_path, monkeypatch):
         _fresh_db(tmp_path, monkeypatch)
         from backend.app import config, store
@@ -190,6 +222,7 @@ class TestMockIndex:
         video_path.write_bytes(b"fake video")
         video_id = generate_video_id()
         store.save_video(Video(video_id=video_id, filename="x.mp4", path=str(video_path),
+                               index_status="done",
                                created_at=time.time(), updated_at=time.time()))
 
         calls = []
@@ -205,6 +238,7 @@ class TestMockIndex:
 
         assert store.get_meeting_video_id(meeting_id) == video_id
         assert len(calls) == 1
+        assert calls[0][0].__name__ == "_run_detector_context"
 
 
 # ── DB store round-trip ────────────────────────────────────────────────────────

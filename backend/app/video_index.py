@@ -26,6 +26,7 @@ from pathlib import Path
 import httpx
 
 from backend.app import config, store
+from backend.app.model_lock import LOCAL_INFERENCE_LOCK
 from backend.app.models import Shot, Video
 
 logger = logging.getLogger(__name__)
@@ -353,7 +354,7 @@ def generate_caption(keyframe_path: Path, shot_index: int) -> str | None:
     Call Ollama with CAPTION_MODEL (e.g. moondream) to describe a keyframe.
     Returns None silently on any failure (caption is optional).
     """
-    if not config.CAPTION_MODEL:
+    if not config.VISION_VLM_ENABLED or not config.CAPTION_MODEL:
         return None
     try:
         import base64
@@ -374,7 +375,8 @@ def generate_caption(keyframe_path: Path, shot_index: int) -> str | None:
             ],
             "stream": False,
         }
-        resp = httpx.post(url, json=payload, timeout=30)
+        with LOCAL_INFERENCE_LOCK:
+            resp = httpx.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         text = resp.json().get("message", {}).get("content", "").strip()
         return text or None
@@ -441,9 +443,11 @@ def index_video(video_id: str, video_path: Path) -> None:
     """
     if config.MOCK_VISION:
         _mock_index(video_id)
-        # In mock mode, also create the video-context artifacts so the pipeline is fully wired.
+        # Exercise the detector and context path without downloading model weights.
         try:
+            from backend.app.detector_pass import run_detector_pass
             from backend.app.vision_pass import generate_video_context_pipeline
+            run_detector_pass(video_id, video_path)
             generate_video_context_pipeline(video_id, video_path)
         except Exception:
             pass
@@ -537,10 +541,17 @@ def index_video(video_id: str, video_path: Path) -> None:
             if emb_bytes is not None:
                 store.save_frame_embedding(frame_id, shot_id, time_sec, emb_bytes)
 
-        # 5. Generate frame descriptions and build video context from sampled frames.
+        # 5. Build detector entities first; the slower VLM is secondary and optional.
+        from backend.app.detector_pass import run_detector_pass
+        run_detector_pass(video_id, video_path)
+        from backend.app.video_context import build_video_context
+        build_video_context(video_id)
+
+        # 6. Add low-frequency scene context only when explicitly enabled.
         try:
             from backend.app.vision_pass import generate_video_context_pipeline
-            generate_video_context_pipeline(video_id, video_path)
+            if config.VISION_VLM_ENABLED:
+                generate_video_context_pipeline(video_id, video_path)
         except Exception as exc:
             logger.warning("[%s] Frame-to-context pipeline failed after indexing: %s", video_id[:8], exc)
 

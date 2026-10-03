@@ -3,7 +3,7 @@ import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
   postReanchor, importTranscript, uploadVideo, linkMeetingVideo, fetchMeetilyStatus,
   exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle,
-  generateEditInstructions, fetchEditInstructions, triggerVisionPass,
+  generateEditInstructions, fetchEditInstructions,
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
 import VideoContextPanel from './components/VideoContextPanel.jsx'
@@ -326,9 +326,13 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
   useEffect(() => {
     setLoading(true)
+    setData(null)
     setSelectedItem(null)
     fetchMeeting(meetingId)
-      .then(d => setData(d))
+      .then(d => {
+        setData(d)
+        setVideoUrl(d.video_id ? `/api/videos/${d.video_id}/stream` : null)
+      })
       .catch(e => {
         if (e.message.includes('404')) {
           toast('Meeting not found (it may have been deleted)', 'error')
@@ -339,6 +343,24 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       })
       .finally(() => setLoading(false))
   }, [meetingId])
+
+  useEffect(() => {
+    if (!meetingId || data?.status !== 'processing') return
+    let active = true
+    const refresh = async () => {
+      try {
+        const latest = await fetchMeeting(meetingId)
+        if (active) setData(latest)
+      } catch (error) {
+        if (active) toast(`Transcript processing status failed: ${error.message}`, 'error')
+      }
+    }
+    const timer = setInterval(refresh, 1500)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [meetingId, data?.status, toast])
 
   const handleItemUpdated = useCallback((updated) => {
     setData(d => ({
@@ -368,8 +390,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       await linkMeetingVideo(meetingId, videoId)
       setData(d => ({ ...d, video_id: videoId }))
       setVideoUrl(`/api/videos/${videoId}/stream`)
-      await triggerVisionPass(videoId)
-      toast('Video uploaded, linked, and vision context started', 'success')
+      toast('Video uploaded and linked; YOLO indexing started', 'success')
     } catch (err) {
       toast(`Video upload failed: ${err.message}`, 'error')
     }
@@ -451,7 +472,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
       ) : tab === 'vision' ? (
         <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
           <VideoContextPanel
-            videoId={data.video_id || (data.meeting_id ? `vid-${data.meeting_id}` : '')}
+            videoId={data.video_id || ''}
             onSeek={(tSec) => {
               if (videoRef.current) videoRef.current.currentTime = tSec
             }}
@@ -527,7 +548,13 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
             <div className="items-list">
               {items.length === 0 ? (
-                <div className="empty-state">No items yet.<br />Run pipeline or import a transcript.</div>
+                <div className="empty-state">
+                  {data.status === 'processing'
+                    ? 'Transcript imported. Extracting feedback items…'
+                    : data.status === 'failed'
+                      ? 'Feedback extraction failed. Re-import the transcript or check the backend log.'
+                      : 'No feedback items were extracted from this transcript.'}
+                </div>
               ) : (
                 items.map(item => (
                   <ItemCard

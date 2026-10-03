@@ -287,12 +287,28 @@ def link_video_to_meeting(
 
     if payload.video_id:
         video = store.get_video(payload.video_id)
-        if video and Path(video.path).exists() and not store.get_frame_descriptions(payload.video_id):
-            from backend.app.vision_pass import generate_video_context_pipeline
-            background_tasks.add_task(
-                generate_video_context_pipeline,
-                payload.video_id,
-                Path(video.path),
-            )
+        if video and video.index_status == "done" and Path(video.path).exists():
+            detections = store.get_detections(payload.video_id)
+            context = store.get_video_context(payload.video_id)
+            if detections and (not context or context.get("global_summary") == "No video context available."):
+                from backend.app.video_context import build_video_context
+                background_tasks.add_task(build_video_context, payload.video_id)
+            elif not detections:
+                background_tasks.add_task(_run_detector_context, payload.video_id, Path(video.path))
 
     return {"status": "ok", "meeting_id": meeting_id, "video_id": payload.video_id}
+
+
+def _run_detector_context(video_id: str, video_path: Path) -> None:
+    """Backfill detector data for videos indexed before the YOLO-first pipeline."""
+    from backend.app.detector_pass import run_detector_pass
+    from backend.app.video_context import build_video_context
+
+    store.update_video_status(video_id, "running", 0.0)
+    try:
+        run_detector_pass(video_id, video_path)
+        build_video_context(video_id)
+        store.update_video_status(video_id, "done", 100.0)
+    except Exception:
+        store.update_video_status(video_id, "failed", 0.0)
+        raise

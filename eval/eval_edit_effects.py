@@ -2,6 +2,7 @@
 eval_edit_effects.py – Evaluation script measuring entity-interval hit rate, edit instruction accuracy, and vision pass latency.
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -12,8 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app import config, store
 
 from backend.app.models import FeedbackItem, Video
+from backend.app.detector_pass import build_entity_index, run_detector_pass
 from backend.app.vision_pass import _mock_vision_descriptions
-from backend.app.video_context import build_video_context
+from backend.app.video_context import build_video_context, build_vlm_entity_index
 from backend.app.edit_instructions import generate_edit_instructions
 
 EVAL_DIR = Path(__file__).parent
@@ -21,8 +23,10 @@ GT_PATH = EVAL_DIR / "ground_truth.json"
 
 
 def evaluate():
+    os.environ["MOCK_LLM"] = "1"
     config.MOCK_LLM = True
     config.MOCK_VISION_LLM = True
+    config.MOCK_VISION = True
 
     if not GT_PATH.exists():
         print(f"Error: Ground truth file not found at {GT_PATH}")
@@ -43,27 +47,38 @@ def evaluate():
     store.save_video(Video(video_id=video_id, filename="eval.mp4", path="eval.mp4"))
     start_v = time.time()
     _mock_vision_descriptions(video_id, duration_sec=60.0)
+    run_detector_pass(video_id, Path("eval.mp4"))
     build_video_context(video_id)
     v_time = time.time() - start_v
 
-    # 2. Evaluate Entity Interval Hit Rate
+    # 2. Compare detector-only, VLM-only, and fused entity intervals.
+    detector_entities = build_entity_index(store.get_detections(video_id), config.DETECT_FPS)
+    vlm_entities = build_vlm_entity_index(store.get_frame_descriptions(video_id))
     entities = store.get_entities(video_id)
     gt_entities = gt.get("entities", [])
-    entity_hits = 0
 
-    for gte in gt_entities:
-        key = gte["key"]
-        found = next((e for e in entities if e["key"] == key), None)
-        if found:
-            # Check overlap of first interval
-            if found.get("intervals") and gte.get("intervals"):
-                f_iv = found["intervals"][0]
-                g_iv = gte["intervals"][0]
-                # Overlap check
-                if max(f_iv["start_sec"], g_iv["start_sec"]) <= min(f_iv["end_sec"], g_iv["end_sec"]) + 2.0:
-                    entity_hits += 1
+    def interval_hit_rate(predicted_entities):
+        hits = 0
+        for expected in gt_entities:
+            expected_class = expected["key"].split()[-1]
+            candidates = [
+                entity for entity in predicted_entities
+                if entity["key"] == expected["key"] or entity.get("class") == expected_class
+            ]
+            best_iou = 0.0
+            for entity in candidates:
+                for predicted in entity.get("intervals", []):
+                    for target in expected.get("intervals", []):
+                        intersection = max(0.0, min(predicted["end_sec"], target["end_sec"]) - max(predicted["start_sec"], target["start_sec"]))
+                        union = max(predicted["end_sec"], target["end_sec"]) - min(predicted["start_sec"], target["start_sec"])
+                        best_iou = max(best_iou, intersection / union if union > 0 else 0.0)
+            if best_iou >= 0.5:
+                hits += 1
+        return hits, hits / len(gt_entities) * 100.0 if gt_entities else 100.0
 
-    entity_hit_rate = (entity_hits / len(gt_entities)) * 100.0 if gt_entities else 100.0
+    detector_hits, detector_hit_rate = interval_hit_rate(detector_entities)
+    vlm_hits, vlm_hit_rate = interval_hit_rate(vlm_entities)
+    entity_hits, entity_hit_rate = interval_hit_rate(entities)
 
     # 3. Evaluate Edit Instruction Accuracy
     sample_items = []
@@ -112,7 +127,9 @@ def evaluate():
     print("\n" + "=" * 65)
     print("Evaluation Results Summary")
     print("=" * 65)
-    print(f"Entity-Interval Hit Rate  : {entity_hit_rate:.1f}% ({entity_hits}/{len(gt_entities)})")
+    print(f"Detector Interval IoU>=0.5: {detector_hit_rate:.1f}% ({detector_hits}/{len(gt_entities)})")
+    print(f"VLM-only Interval IoU>=0.5: {vlm_hit_rate:.1f}% ({vlm_hits}/{len(gt_entities)})")
+    print(f"Fused Interval IoU>=0.5   : {entity_hit_rate:.1f}% ({entity_hits}/{len(gt_entities)})")
     print(f"Effect Name Accuracy     : {effect_acc:.1f}% ({correct_effect}/{total_samples})")
     print(f"Target Entity Accuracy   : {target_acc:.1f}% ({correct_target}/{total_samples})")
     print(f"Time Interval Accuracy   : {interval_acc:.1f}% ({correct_interval}/{total_samples})")

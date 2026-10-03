@@ -111,6 +111,25 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_frames_shot ON frames(shot_id);
 
+            CREATE TABLE IF NOT EXISTS detections (
+                id          TEXT PRIMARY KEY,
+                video_id    TEXT NOT NULL,
+                frame_index INTEGER NOT NULL,
+                time_sec    REAL NOT NULL,
+                track_id    TEXT NOT NULL,
+                class_name  TEXT NOT NULL,
+                color       TEXT NOT NULL,
+                confidence  REAL NOT NULL,
+                bbox        TEXT NOT NULL,
+                mask        TEXT,
+                position    TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_detections_video_time
+                ON detections(video_id, time_sec);
+            CREATE INDEX IF NOT EXISTS idx_detections_video_track
+                ON detections(video_id, track_id);
+
             -- Phase 3 Vision Context & Edit Instruction tables
             CREATE TABLE IF NOT EXISTS frame_descriptions (
                 id           TEXT PRIMARY KEY,
@@ -170,6 +189,7 @@ def init_db() -> None:
         for alter in [
             "ALTER TABLE meetings ADD COLUMN status TEXT DEFAULT 'completed'",
             "ALTER TABLE meetings ADD COLUMN video_id TEXT",
+            "ALTER TABLE detections ADD COLUMN position TEXT",
         ]:
             try:
                 conn.execute(alter)
@@ -591,6 +611,44 @@ def get_frame_descriptions(video_id: str) -> list[dict]:
         d["data"] = json.loads(d["data"]) if d.get("data") else {}
         d["reused"] = bool(d.get("reused"))
         result.append(d)
+    return result
+
+
+def save_detections(video_id: str, detections: list[dict]) -> None:
+    """Replace sampled detector observations for a video."""
+    rows = []
+    for detection in detections:
+        rows.append((
+            detection["id"], video_id, detection["frame_index"], detection["time_sec"],
+            detection["track_id"], detection["class_name"], detection.get("color", "unknown"),
+            detection["confidence"], json.dumps(detection["bbox"]),
+            json.dumps(detection["mask"]) if detection.get("mask") is not None else None,
+            detection.get("position"),
+        ))
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM detections WHERE video_id = ?", (video_id,))
+        conn.executemany(
+            """INSERT INTO detections
+               (id, video_id, frame_index, time_sec, track_id, class_name,
+                color, confidence, bbox, mask, position)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+
+
+def get_detections(video_id: str) -> list[dict]:
+    """Return sampled detector observations in video-time order."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM detections WHERE video_id = ? ORDER BY time_sec, frame_index, id",
+            (video_id,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        detection = dict(row)
+        detection["bbox"] = json.loads(detection["bbox"])
+        detection["mask"] = json.loads(detection["mask"]) if detection["mask"] else None
+        result.append(detection)
     return result
 
 

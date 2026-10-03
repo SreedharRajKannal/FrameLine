@@ -13,3 +13,5 @@ sentence-transformers        # CLIP image embedding (clip-ViT-B-32)
 Pillow                       # image loading for CLIP
 imageio-ffmpeg               # bundled ffmpeg binary (fallback when ffmpeg not on PATH)
 numpy                        # embedding serialization
+ultralytics                  # YOLO object detection and ByteTrack tracking (AGPL-3.0)
+lap>=0.5.12                  # ByteTrack assignment backend used by Ultralytics

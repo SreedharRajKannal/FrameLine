@@ -25,16 +25,97 @@ def _normalize_entity_key(name: str) -> str:
     return clean.strip()
 
 
+def build_vlm_entity_index(descs: list[dict]) -> list[dict]:
+    """Build the secondary VLM-only entity index for paired evaluation."""
+    entity_map: dict[str, dict] = {}
+    for row in descs:
+        time_sec = row["time_sec"]
+        for obj in row["data"].get("objects", []):
+            raw_name = obj.get("name", "")
+            if not raw_name:
+                continue
+            key = _normalize_entity_key(raw_name)
+            entity = entity_map.setdefault(key, {
+                "key": key,
+                "name": raw_name,
+                "color": obj.get("color"),
+                "positions": set(),
+                "support_times": [],
+            })
+            if obj.get("color") and not entity["color"]:
+                entity["color"] = obj["color"]
+            if obj.get("position"):
+                entity["positions"].add(obj["position"])
+            entity["support_times"].append(time_sec)
+
+    entity_list = []
+    for key, entity in entity_map.items():
+        times = sorted(entity["support_times"])
+        intervals = []
+        if times:
+            padding = min(config.VISION_FRAME_INTERVAL_SEC / 2, 0.5)
+            start_sec = max(0.0, times[0] - padding)
+            previous_sec = times[0]
+            for time_sec in times[1:]:
+                if time_sec - previous_sec < config.VISION_FRAME_INTERVAL_SEC + 1.0:
+                    previous_sec = time_sec
+                else:
+                    intervals.append({
+                        "start_sec": round(start_sec, 2),
+                        "end_sec": round(previous_sec + padding, 2),
+                    })
+                    start_sec = max(0.0, time_sec - padding)
+                    previous_sec = time_sec
+            intervals.append({
+                "start_sec": round(start_sec, 2),
+                "end_sec": round(previous_sec + padding, 2),
+            })
+        entity_list.append({
+            "key": key,
+            "name": entity["name"],
+            "class": key.split()[-1],
+            "color": entity["color"],
+            "track_ids": [],
+            "intervals": intervals,
+            "positions": sorted(entity["positions"]),
+            "typical_position": next(iter(entity["positions"]), None),
+            "support_times": times,
+            "support_count": len(times),
+            "confidence": None,
+            "source": "vlm",
+        })
+    return entity_list
+
+
+def _frame_context_lines(data: dict) -> list[str]:
+    """Turn VLM fields into concise, useful timeline context."""
+    lines = []
+    scene = (data.get("scene") or "").strip()
+    if scene:
+        lines.append(scene)
+    for label, field in (
+        ("Action", "action"),
+        ("Mood", "mood"),
+        ("On-screen text", "text_on_screen"),
+        ("Lighting", "lighting_and_palette"),
+    ):
+        value = data.get(field)
+        if value and str(value).strip():
+            lines.append(f"{label}: {str(value).strip()}")
+    return lines
+
+
 def build_video_context(video_id: str) -> dict:
     """
     Build scene segments, canonical entity index, and global summary from frame descriptions.
     Persists results to DB (video_context and entities tables).
     """
     descs = store.get_frame_descriptions(video_id)
+    detections = store.get_detections(video_id)
     shots = store.get_shots(video_id)
 
-    if not descs:
-        logger.warning("[%s] Cannot build video context: no frame descriptions found", video_id[:8])
+    if not descs and not detections:
+        logger.warning("[%s] Cannot build video context: no vision or detector observations found", video_id[:8])
         empty_ctx = {
             "global_summary": "No video context available.",
             "entity_keys": [],
@@ -50,14 +131,15 @@ def build_video_context(video_id: str) -> dict:
     for r in descs:
         t_sec = r["time_sec"]
         data = r["data"]
-        scene_desc = data.get("scene", "Video frame")
+        context_lines = _frame_context_lines(data) or ["Video frame"]
         objs = [o["name"] for o in data.get("objects", []) if "name" in o]
 
         if curr_segment is None:
             curr_segment = {
                 "start_sec": t_sec,
                 "end_sec": t_sec,
-                "summary": scene_desc,
+                "summary": " | ".join(context_lines),
+                "context_lines": context_lines,
                 "key_objects": objs,
             }
         else:
@@ -68,18 +150,49 @@ def build_video_context(video_id: str) -> dict:
             )
             if same_scene and (t_sec - curr_segment["start_sec"]) <= 12.0:
                 curr_segment["end_sec"] = t_sec
+                for line in context_lines:
+                    if line not in curr_segment["context_lines"]:
+                        curr_segment["context_lines"].append(line)
+                curr_segment["summary"] = " | ".join(curr_segment["context_lines"])
                 curr_segment["key_objects"] = list(set(curr_segment["key_objects"] + objs))
             else:
                 scene_segments.append(curr_segment)
                 curr_segment = {
                     "start_sec": t_sec,
                     "end_sec": t_sec,
-                    "summary": scene_desc,
+                    "summary": " | ".join(context_lines),
+                    "context_lines": context_lines,
                     "key_objects": objs,
                 }
 
     if curr_segment:
         scene_segments.append(curr_segment)
+
+    if not scene_segments:
+        from backend.app.detector_pass import build_entity_index
+        detector_entities = build_entity_index(detections, config.DETECT_FPS)
+        for shot in shots:
+            shot_entities = [
+                entity["key"] for entity in detector_entities
+                if any(
+                    interval["start_sec"] < shot.end_sec and interval["end_sec"] > shot.start_sec
+                    for interval in entity["intervals"]
+                )
+            ]
+            scene_segments.append({
+                "start_sec": shot.start_sec,
+                "end_sec": shot.end_sec,
+                "summary": shot.caption or f"Shot {shot.shot_index + 1}",
+                "key_objects": shot_entities,
+            })
+        if not scene_segments and detections:
+            end_sec = max(item["time_sec"] for item in detections) + 1.0 / max(config.DETECT_FPS, 0.1)
+            scene_segments.append({
+                "start_sec": 0.0,
+                "end_sec": end_sec,
+                "summary": "Video scene with detected objects",
+                "key_objects": [entity["key"] for entity in detector_entities],
+            })
 
     # Align segment end times nicely
     for i in range(len(scene_segments) - 1):
@@ -87,68 +200,16 @@ def build_video_context(video_id: str) -> dict:
     if scene_segments:
         scene_segments[-1]["end_sec"] += config.VISION_FRAME_INTERVAL_SEC
 
-    # 2. Build Entity Index
-    entity_map: dict[str, dict] = {}
+    # 2. Build VLM entities as fallback/secondary objects.
+    entity_list = build_vlm_entity_index(descs)
 
-    for r in descs:
-        t_sec = r["time_sec"]
-        data = r["data"]
-        objs = data.get("objects", [])
-
-        for o in objs:
-            raw_name = o.get("name", "")
-            if not raw_name:
-                continue
-
-            key = _normalize_entity_key(raw_name)
-            color = o.get("color")
-            pos = o.get("position")
-
-            if key not in entity_map:
-                entity_map[key] = {
-                    "key": key,
-                    "name": raw_name,
-                    "color": color,
-                    "raw_intervals": [],
-                    "positions": set(),
-                    "support_times": [],
-                }
-
-            ent = entity_map[key]
-            if color and not ent["color"]:
-                ent["color"] = color
-            if pos:
-                ent["positions"].add(pos)
-            ent["support_times"].append(t_sec)
-
-    # Process intervals per entity
-    entity_list = []
-    for key, ent in entity_map.items():
-        times = sorted(ent["support_times"])
-        intervals = []
-        if times:
-            start_t = times[0]
-            prev_t = times[0]
-            padding = config.VISION_FRAME_INTERVAL_SEC
-
-            for t in times[1:]:
-                if t - prev_t <= padding + 1.0:
-                    prev_t = t
-                else:
-                    intervals.append({"start_sec": round(start_t, 2), "end_sec": round(prev_t + padding, 2)})
-                    start_t = t
-                    prev_t = t
-            intervals.append({"start_sec": round(start_t, 2), "end_sec": round(prev_t + padding, 2)})
-
-        ent_record = {
-            "key": key,
-            "name": ent["name"],
-            "color": ent["color"],
-            "intervals": intervals,
-            "positions": list(ent["positions"]),
-            "support_times": times,
-        }
-        entity_list.append(ent_record)
+    if detections:
+        from backend.app.detector_pass import build_entity_index
+        detector_entity_list = build_entity_index(detections, config.DETECT_FPS)
+        detector_keys = {entity["key"] for entity in detector_entity_list}
+        entity_list = detector_entity_list + [
+            entity for entity in entity_list if entity["key"] not in detector_keys
+        ]
 
     # 3. Build Global Summary
     distinct_scenes = [s["summary"] for s in scene_segments[:6]]

@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app import config, store
+from backend.app.detector_pass import run_detector_pass
 from backend.app.edit_instructions import generate_edit_instructions
 from backend.app.models import FeedbackItem
 from backend.app.preview_renderer import render_preview_clip
@@ -45,11 +46,14 @@ def _auto_regenerate_linked_meeting_edits(video_id: str) -> None:
 
 def _run_vision_bg_job(video_id: str, video_path: Path) -> None:
     try:
-        run_vision_pass(
-            video_id=video_id,
-            video_path=video_path,
-            progress_cb=lambda pct, msg: _update_job_progress(video_id, pct, msg),
-        )
+        _update_job_progress(video_id, 5.0, "Starting YOLO object detection")
+        run_detector_pass(video_id, video_path, progress_cb=lambda pct, msg: _update_job_progress(video_id, pct, msg))
+        if config.VISION_VLM_ENABLED:
+            run_vision_pass(
+                video_id=video_id,
+                video_path=video_path,
+                progress_cb=lambda pct, msg: _update_job_progress(video_id, pct, msg),
+            )
         build_video_context(video_id)
 
         # Re-run edit instructions for linked meetings using rich video context
@@ -58,7 +62,7 @@ def _run_vision_bg_job(video_id: str, video_path: Path) -> None:
         _VISION_JOB_PROGRESS[video_id] = {
             "status": "completed",
             "progress_pct": 100.0,
-            "message": "Vision pass, video context & edit instructions complete",
+            "message": "YOLO entities, frame context & edit instructions complete",
         }
     except Exception as exc:
         _VISION_JOB_PROGRESS[video_id] = {
@@ -71,7 +75,7 @@ def _run_vision_bg_job(video_id: str, video_path: Path) -> None:
 
 @router.post("/videos/{video_id}/vision")
 def trigger_vision_pass(video_id: str, bg_tasks: BackgroundTasks):
-    """Trigger vision pass background job for an indexed video."""
+    """Trigger a detector-first context refresh for an uploaded video."""
     video = store.get_video(video_id)
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -86,24 +90,31 @@ def trigger_vision_pass(video_id: str, bg_tasks: BackgroundTasks):
     return {
         "video_id": video_id,
         "status": "enqueued",
-        "message": "Vision pass background job started",
+        "message": "YOLO detection and frame context generation started",
     }
 
 
 
 @router.get("/videos/{video_id}/vision/status")
 def get_vision_status(video_id: str):
-    """Get current status and progress of the vision pass job."""
+    """Get detector-first context job status and sampled frame counts."""
     progress = _VISION_JOB_PROGRESS.get(video_id)
     descs = store.get_frame_descriptions(video_id)
+    detections = store.get_detections(video_id)
     if not progress:
-        status_str = "completed" if descs else "not_started"
+        video = store.get_video(video_id)
+        status_str = "completed" if video and video.index_status == "done" else (
+            "running" if video and video.index_status == "running" else "not_started"
+        )
         progress = {
             "status": status_str,
-            "progress_pct": 100.0 if descs else 0.0,
-            "message": f"Found {len(descs)} described frames" if descs else "No vision pass run yet",
+            "progress_pct": video.index_pct if video else 0.0,
+            "message": f"Indexed {len(detections)} detections" if detections else (
+                "YOLO indexing in progress" if status_str == "running" else "No detector results yet"
+            ),
         }
     progress["frame_count"] = len(descs)
+    progress["detection_count"] = len(detections)
     return progress
 
 
@@ -111,13 +122,15 @@ def get_vision_status(video_id: str):
 def get_video_context_endpoint(video_id: str):
     """Get aggregated video context (global summary, scene timeline, entity keys)."""
     ctx = store.get_video_context(video_id)
-    if not ctx:
-        # Build if frame descriptions exist
+    detections = store.get_detections(video_id)
+    if not ctx or (ctx.get("global_summary") == "No video context available." and detections):
         descs = store.get_frame_descriptions(video_id)
-        if descs:
+        if descs or detections:
             ctx = build_video_context(video_id)
         else:
             raise HTTPException(status_code=404, detail="No video context available for this video")
+    if ctx.get("global_summary") == "No video context available." and not detections:
+        raise HTTPException(status_code=409, detail="No YOLO detections found; run YOLO indexing for this video")
     return ctx
 
 
