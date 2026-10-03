@@ -80,3 +80,13 @@ try:
     app.include_router(privacy.router, prefix="/api")
 except ImportError:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Video indexing router (Phase 2)
+# ---------------------------------------------------------------------------
+try:
+    from backend.app.routers import video as video_router
+    app.include_router(video_router.router, prefix="/api")
+except ImportError:
+    pass

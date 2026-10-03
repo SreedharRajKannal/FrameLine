@@ -5,5 +5,11 @@ pydantic
 python-dotenv
 pytest
 pytest-asyncio
-httpx
 python-multipart
+
+# Vision / video indexing (Phase 2)
+scenedetect[opencv]          # shot detection
+sentence-transformers        # CLIP image embedding (clip-ViT-B-32)
+Pillow                       # image loading for CLIP
+imageio-ffmpeg               # bundled ffmpeg binary (fallback when ffmpeg not on PATH)
+numpy                        # embedding serialization
