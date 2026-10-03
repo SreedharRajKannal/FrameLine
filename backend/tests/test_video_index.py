@@ -150,6 +150,62 @@ class TestMockIndex:
         captions = [s.caption for s in shots if s.caption]
         assert len(captions) == len(shots), "All mock shots must have captions"
 
+    def test_mock_index_generates_frame_context(self, tmp_path, monkeypatch):
+        _fresh_db(tmp_path, monkeypatch)
+        from backend.app import config, store
+        monkeypatch.setattr(config, "MOCK_VISION", True)
+        monkeypatch.setattr(config, "MOCK_VISION_LLM", True)
+        monkeypatch.setattr(config, "VIDEO_DATA_DIR", str(tmp_path / "videos"))
+
+        from backend.app.models import Video
+        from backend.app.video_index import generate_video_id, index_video
+        import time
+
+        video_id = generate_video_id()
+        store.save_video(Video(video_id=video_id, filename="x.mp4", path="x.mp4",
+                               created_at=time.time(), updated_at=time.time()))
+
+        index_video(video_id, tmp_path / "x.mp4")
+
+        assert store.get_frame_descriptions(video_id)
+        assert store.get_video_context(video_id) is not None
+
+    def test_linking_video_after_import_triggers_context_generation(self, tmp_path, monkeypatch):
+        _fresh_db(tmp_path, monkeypatch)
+        from backend.app import config, store
+        monkeypatch.setattr(config, "MOCK_VISION", True)
+        monkeypatch.setattr(config, "MOCK_VISION_LLM", True)
+        monkeypatch.setattr(config, "VIDEO_DATA_DIR", str(tmp_path / "videos"))
+
+        from backend.app.models import Transcript, Video
+        from backend.app.routers.video import VideoLinkPayload, link_video_to_meeting
+        from backend.app.video_index import generate_video_id
+        import time
+
+        meeting_id = "m-late-link"
+        tx = Transcript(meeting_id=meeting_id, title="Demo", segments=[])
+        store.save_transcript(tx)
+
+        video_path = tmp_path / "x.mp4"
+        video_path.write_bytes(b"fake video")
+        video_id = generate_video_id()
+        store.save_video(Video(video_id=video_id, filename="x.mp4", path=str(video_path),
+                               created_at=time.time(), updated_at=time.time()))
+
+        calls = []
+        class TaskCollector:
+            def add_task(self, fn, *args, **kwargs):
+                calls.append((fn, args, kwargs))
+
+        link_video_to_meeting(
+            meeting_id,
+            VideoLinkPayload(video_id=video_id),
+            background_tasks=TaskCollector(),
+        )
+
+        assert store.get_meeting_video_id(meeting_id) == video_id
+        assert len(calls) == 1
+
 
 # ── DB store round-trip ────────────────────────────────────────────────────────
 

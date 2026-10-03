@@ -128,6 +128,8 @@ Sivapriyan (stretch): GET /api/meetings/{id}/safe-transcript
 - 2026-10-02 16:35 ✅ STEP 2 DONE: routers/review.py (health, meetings CRUD, PATCH item, PUT settings, POST reanchor, POST reprocess), backend/tests/test_store.py, backend/tests/test_review.py
 - 2026-10-02 19:25 ✅ WEBHOOK SETUP: Identified Meetily private IP restriction (HTTP 400). Registered public tunnel destination with Meetily API (201 Created). Auto-update script for .env created. All 79 backend tests passing.
 - 2026-10-03 04:00 ✅ PHASE 3 VISION & EDIT EFFECTS COMPLETE: Built MiniCPM-V vision pass with frame deduplication & 0.6s soft thinking budget, video context timeline & entity indexer ("red car: 0:12-0:18"), Qwen edit instruction engine with closed effect vocabulary and code-level ffmpeg filter compiler, side-by-side 480p preview renderer, Resolve marker exporter, VideoContextPanel & EditInstructionCard React UI components, benchmark script, and evaluation harness (109/109 backend unit tests passing).
+- 2026-10-03 15:40 ✅ VIDEO CONTEXT PIPELINE FIX: indexed videos now trigger the frame-sampling vision flow automatically, sending sampled frame images to the local vision LLM instead of the whole video, then building scene/entity context for the editor UI and edit-generation prompts.
+- 2026-10-03 ✅ GIT IGNORE: local uploads and generated runtime artifacts under `data/` are ignored; `.env.example` remains trackable.
 
 ### Karthik
 - 2026-10-02 17:00 ✅ PRE-WORK: Read all Meetily docs (authentication, webhooks-and-sse, api-reference, events, enable-and-connect). Key findings:

@@ -58,6 +58,24 @@ export async function importTranscript(file) {
   return r.json()
 }
 
+export async function uploadVideo(file) {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch(`${API}/videos`, { method: 'POST', body: form })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function linkMeetingVideo(meetingId, videoId) {
+  const r = await fetch(`${API}/meetings/${meetingId}/video`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video_id: videoId }),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
 export async function updateMeetingTitle(meetingId, title) {
   const r = await fetch(`${API}/meetings/${meetingId}/title`, {
     method: 'PUT',

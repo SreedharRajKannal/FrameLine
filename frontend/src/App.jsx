@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
-  postReanchor, importTranscript, fetchMeetilyStatus,
+  postReanchor, importTranscript, uploadVideo, linkMeetingVideo, fetchMeetilyStatus,
   exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle,
-  generateEditInstructions, fetchEditInstructions
+  generateEditInstructions, fetchEditInstructions, triggerVisionPass,
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
 import VideoContextPanel from './components/VideoContextPanel.jsx'
@@ -356,9 +356,23 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
     }
   }
 
-  const handleVideoFile = (e) => {
+  const handleVideoFile = async (e) => {
     const f = e.target.files[0]
-    if (f) setVideoUrl(URL.createObjectURL(f))
+    if (!f) return
+
+    try {
+      const upload = await uploadVideo(f)
+      const videoId = upload.video_id
+      if (!videoId) throw new Error('Upload response missing video_id')
+
+      await linkMeetingVideo(meetingId, videoId)
+      setData(d => ({ ...d, video_id: videoId }))
+      setVideoUrl(`/api/videos/${videoId}/stream`)
+      await triggerVisionPass(videoId)
+      toast('Video uploaded, linked, and vision context started', 'success')
+    } catch (err) {
+      toast(`Video upload failed: ${err.message}`, 'error')
+    }
   }
 
   const handleApproveAllHighConf = async () => {

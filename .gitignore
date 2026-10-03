@@ -16,6 +16,10 @@ env/
 # Environment
 .env
 *.env
+!.env.example
+
+# Local uploaded videos, previews, and generated runtime data
+/data/
 
 # Database
 *.db

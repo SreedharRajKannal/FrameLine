@@ -435,10 +435,18 @@ def index_video(video_id: str, video_path: Path) -> None:
       2. Shot detection (PySceneDetect or fixed fallback)
       3. Per shot: extract keyframe → CLIP embed → caption → sample extra frames
       4. Persist shots and frame embeddings to DB
-      5. Mark status = done (or failed)
+      5. Trigger the frame-to-video-context pipeline so the local vision LLM sees
+         sampled frames instead of the entire video file.
+      6. Mark status = done (or failed)
     """
     if config.MOCK_VISION:
         _mock_index(video_id)
+        # In mock mode, also create the video-context artifacts so the pipeline is fully wired.
+        try:
+            from backend.app.vision_pass import generate_video_context_pipeline
+            generate_video_context_pipeline(video_id, video_path)
+        except Exception:
+            pass
         return
 
     try:
@@ -528,6 +536,13 @@ def index_video(video_id: str, video_path: Path) -> None:
         for frame_id, shot_id, time_sec, emb_bytes in frame_rows:
             if emb_bytes is not None:
                 store.save_frame_embedding(frame_id, shot_id, time_sec, emb_bytes)
+
+        # 5. Generate frame descriptions and build video context from sampled frames.
+        try:
+            from backend.app.vision_pass import generate_video_context_pipeline
+            generate_video_context_pipeline(video_id, video_path)
+        except Exception as exc:
+            logger.warning("[%s] Frame-to-context pipeline failed after indexing: %s", video_id[:8], exc)
 
         store.update_video_status(video_id, "done", 100.0)
         logger.info(

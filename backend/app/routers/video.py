@@ -266,7 +266,11 @@ class VideoLinkPayload(BaseModel):
 
 
 @router.put("/meetings/{meeting_id}/video")
-def link_video_to_meeting(meeting_id: str, payload: VideoLinkPayload):
+def link_video_to_meeting(
+    meeting_id: str,
+    payload: VideoLinkPayload,
+    background_tasks: BackgroundTasks,
+):
     """
     Link (or unlink) a video_id to a meeting.
     On webhook arrival the pipeline auto-links the latest indexed video;
@@ -278,5 +282,17 @@ def link_video_to_meeting(meeting_id: str, payload: VideoLinkPayload):
         v = store.get_video(payload.video_id)
         if not v:
             raise HTTPException(404, "Video not found")
+
     store.link_video_to_meeting(meeting_id, payload.video_id)  # type: ignore[arg-type]
+
+    if payload.video_id:
+        video = store.get_video(payload.video_id)
+        if video and Path(video.path).exists() and not store.get_frame_descriptions(payload.video_id):
+            from backend.app.vision_pass import generate_video_context_pipeline
+            background_tasks.add_task(
+                generate_video_context_pipeline,
+                payload.video_id,
+                Path(video.path),
+            )
+
     return {"status": "ok", "meeting_id": meeting_id, "video_id": payload.video_id}

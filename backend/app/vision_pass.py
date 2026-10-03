@@ -368,7 +368,6 @@ def run_vision_pass(
 
     existing_descs = {r["time_sec"]: r for r in store.get_frame_descriptions(video_id)}
     total_frames = len(sampled)
-    processed_count = 0
     prev_frame_path: Path | None = None
     prev_desc: FrameDescription | None = None
 
@@ -422,3 +421,24 @@ def run_vision_pass(
         progress_cb(100.0, "Vision pass complete")
 
     return store.get_frame_descriptions(video_id)
+
+
+def generate_video_context_pipeline(
+    video_id: str,
+    video_path: Path,
+    progress_cb: Callable[[float, str], None] | None = None,
+) -> list[dict]:
+    """
+    End-to-end frame-to-context pipeline:
+      1. extract sampled frames from the video,
+      2. send each frame image to the local vision LLM,
+      3. persist frame descriptions,
+      4. aggregate them into scene/entity video context.
+    This ensures the LLM sees discrete frames instead of the whole video file.
+    """
+    from backend.app.video_context import build_video_context
+
+    descriptions = run_vision_pass(video_id, video_path, progress_cb=progress_cb)
+    if descriptions:
+        build_video_context(video_id)
+    return descriptions
