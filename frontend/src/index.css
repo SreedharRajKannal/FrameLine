@@ -944,3 +944,148 @@ input, textarea, select { font-family: inherit; }
   border-radius: 4px;
 }
 
+/* ── Phase 3 Vision Context & Edit Instructions Styling ── */
+.video-context-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.vision-progress-card {
+  background: rgba(124, 107, 252, 0.08);
+  border: 1px solid rgba(124, 107, 252, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.progress-bar-container {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.entity-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.entity-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.btn-time-badge {
+  background: rgba(124, 107, 252, 0.15);
+  color: var(--accent-hover);
+  border: 1px solid rgba(124, 107, 252, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.btn-time-badge:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.scene-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.scene-card:hover {
+  border-color: var(--accent);
+  background: rgba(124, 107, 252, 0.04);
+}
+
+.edit-instruction-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.edit-instruction-card.status-approved {
+  border-color: rgba(104, 211, 145, 0.4);
+  background: rgba(104, 211, 145, 0.05);
+}
+
+.effect-badge {
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.target-chip {
+  background: rgba(246, 173, 85, 0.12);
+  color: var(--priority-medium);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.preview-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.preview-modal-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 720px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+

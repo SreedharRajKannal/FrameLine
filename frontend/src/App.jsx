@@ -2,9 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchMeetings, fetchMeeting, patchItem, putSettings,
   postReanchor, importTranscript, fetchMeetilyStatus,
-  exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle
+  exportEdlUrl, exportCsvUrl, deleteMeeting, updateMeetingTitle,
+  generateEditInstructions, fetchEditInstructions
 } from './api.js'
 import { secondsToTimecode, timecodeToSeconds } from './timecode.js'
+import VideoContextPanel from './components/VideoContextPanel.jsx'
+import EditInstructionCard from './components/EditInstructionCard.jsx'
+
 
 // ─────────────────────────────────────────────────────────
 // Toast context (simple local state)
@@ -402,6 +406,9 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
         <button className={`tab ${tab === 'items' ? 'active' : ''}`} onClick={() => setTab('items')}>
           Items ({data.items?.length || 0})
         </button>
+        <button className={`tab ${tab === 'vision' ? 'active' : ''}`} onClick={() => setTab('vision')}>
+          📹 Video Context
+        </button>
         <button className={`tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
           ⚙ Settings
         </button>
@@ -427,8 +434,19 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
             toast={toast}
           />
         </div>
+      ) : tab === 'vision' ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          <VideoContextPanel
+            videoId={data.video_id || (data.meeting_id ? `vid-${data.meeting_id}` : '')}
+            onSeek={(tSec) => {
+              if (videoRef.current) videoRef.current.currentTime = tSec
+            }}
+          />
+        </div>
       ) : (
+
         <div className="meeting-layout" style={{ flex: 1, overflow: 'hidden' }}>
+
           {/* ── Video pane ── */}
           <div className="video-pane">
             <div className="video-header">

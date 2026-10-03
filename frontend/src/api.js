@@ -81,3 +81,61 @@ export function exportEdlUrl(meetingId) {
 export function exportCsvUrl(meetingId) {
   return `${API}/meetings/${meetingId}/export.csv`
 }
+
+// ── Phase 3 Vision & Edit API ────────────────────────────────────────────────
+export async function triggerVisionPass(videoId) {
+  const r = await fetch(`${API}/videos/${videoId}/vision`, { method: 'POST' })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function fetchVisionStatus(videoId) {
+  const r = await fetch(`${API}/videos/${videoId}/vision/status`)
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function fetchVideoContext(videoId) {
+  const r = await fetch(`${API}/videos/${videoId}/context`)
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function fetchEntities(videoId) {
+  const r = await fetch(`${API}/videos/${videoId}/entities`)
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function generateEditInstructions(meetingId, videoId) {
+  const r = await fetch(`${API}/meetings/${meetingId}/edits/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video_id: videoId }),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function fetchEditInstructions(meetingId) {
+  const r = await fetch(`${API}/meetings/${meetingId}/edits`)
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function patchEditInstruction(instId, patch) {
+  const r = await fetch(`${API}/edits/${instId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function renderEditPreview(instId) {
+  const r = await fetch(`${API}/edits/${instId}/preview`, { method: 'POST' })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+

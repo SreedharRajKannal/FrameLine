@@ -110,6 +110,61 @@ def init_db() -> None:
                 FOREIGN KEY (shot_id) REFERENCES shots(id)
             );
             CREATE INDEX IF NOT EXISTS idx_frames_shot ON frames(shot_id);
+
+            -- Phase 3 Vision Context & Edit Instruction tables
+            CREATE TABLE IF NOT EXISTS frame_descriptions (
+                id           TEXT PRIMARY KEY,
+                video_id     TEXT NOT NULL,
+                time_sec     REAL NOT NULL,
+                data         TEXT NOT NULL,
+                think_text   TEXT,
+                latency_ms   REAL,
+                reused       INTEGER DEFAULT 0,
+                model        TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_frame_desc_vid ON frame_descriptions(video_id);
+
+            CREATE TABLE IF NOT EXISTS video_context (
+                video_id     TEXT PRIMARY KEY,
+                built_at     REAL NOT NULL,
+                data         TEXT NOT NULL,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS entities (
+                id           TEXT PRIMARY KEY,
+                video_id     TEXT NOT NULL,
+                key          TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                color        TEXT,
+                intervals    TEXT NOT NULL,
+                data         TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_entities_video ON entities(video_id);
+
+            CREATE TABLE IF NOT EXISTS edit_instructions (
+                id                  TEXT PRIMARY KEY,
+                item_id             TEXT NOT NULL,
+                meeting_id          TEXT NOT NULL,
+                effect              TEXT NOT NULL,
+                target_entity       TEXT,
+                start_sec           REAL NOT NULL,
+                end_sec             REAL NOT NULL,
+                params              TEXT NOT NULL,
+                confidence          REAL DEFAULT 1.0,
+                reason              TEXT,
+                ambiguous           INTEGER DEFAULT 0,
+                candidate_intervals TEXT,
+                status              TEXT DEFAULT 'pending', -- pending, approved, rejected
+                filter_string       TEXT,
+                preview_path        TEXT,
+                created_at          REAL,
+                FOREIGN KEY (meeting_id) REFERENCES meetings(meeting_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_edits_meeting ON edit_instructions(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_edits_item ON edit_instructions(item_id);
         """)
         # Backward-compat: add columns to pre-existing DB files
         for alter in [
@@ -167,12 +222,23 @@ def get_transcript(meeting_id: str) -> Transcript | None:
     return Transcript.model_validate_json(row["raw_json"])
 
 
+def get_meeting(meeting_id: str) -> dict | None:
+    """Return meeting record dict (meeting_id, title, summary, status, video_id) or None."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT meeting_id, title, summary, status, video_id FROM meetings WHERE meeting_id = ?",
+            (meeting_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def list_meetings() -> list[dict]:
     """Return a lightweight list of meetings: meeting_id, title, summary, status, video_id."""
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT meeting_id, title, summary, status, video_id FROM meetings ORDER BY rowid DESC"
         ).fetchall()
+
     return [dict(r) for r in rows]
 
 
@@ -470,3 +536,212 @@ def get_frame_embeddings(video_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Frame descriptions, video context, entities, edit instructions
+# ---------------------------------------------------------------------------
+
+def save_frame_description(
+    video_id: str,
+    time_sec: float,
+    data: dict,
+    think_text: str | None = None,
+    latency_ms: float | None = None,
+    reused: bool = False,
+    model: str | None = None,
+) -> str:
+    """Save or update one frame description."""
+    desc_id = f"fdesc-{video_id[:8]}-{time_sec:.1f}"
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO frame_descriptions
+                (id, video_id, time_sec, data, think_text, latency_ms, reused, model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                desc_id,
+                video_id,
+                time_sec,
+                json.dumps(data),
+                think_text,
+                latency_ms,
+                1 if reused else 0,
+                model,
+            ),
+        )
+    return desc_id
+
+
+def get_frame_descriptions(video_id: str) -> list[dict]:
+    """Get all frame descriptions for a video, ordered by time_sec."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM frame_descriptions
+            WHERE video_id = ?
+            ORDER BY time_sec
+            """,
+            (video_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["data"] = json.loads(d["data"]) if d.get("data") else {}
+        d["reused"] = bool(d.get("reused"))
+        result.append(d)
+    return result
+
+
+def save_video_context(video_id: str, context_data: dict) -> None:
+    """Save aggregated video context (scenes, entity index, summary)."""
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO video_context (video_id, built_at, data)
+            VALUES (?, ?, ?)
+            """,
+            (video_id, _time.time(), json.dumps(context_data)),
+        )
+
+
+def get_video_context(video_id: str) -> dict | None:
+    """Get video context by video_id."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM video_context WHERE video_id = ?", (video_id,)
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    return json.loads(d["data"]) if d.get("data") else None
+
+
+def save_entities(video_id: str, entities_list: list[dict]) -> None:
+    """Save or replace entity index for a video."""
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM entities WHERE video_id = ?", (video_id,))
+        for ent in entities_list:
+            ent_id = f"ent-{video_id[:8]}-{ent['key']}"
+            conn.execute(
+                """
+                INSERT INTO entities (id, video_id, key, name, color, intervals, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ent_id,
+                    video_id,
+                    ent["key"],
+                    ent.get("name", ent["key"]),
+                    ent.get("color"),
+                    json.dumps(ent.get("intervals", [])),
+                    json.dumps(ent),
+                ),
+            )
+
+
+def get_entities(video_id: str) -> list[dict]:
+    """Get entity index list for a video."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM entities WHERE video_id = ? ORDER BY key", (video_id,)
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        full_data = json.loads(d["data"]) if d.get("data") else {}
+        full_data["key"] = d["key"]
+        full_data["name"] = d["name"]
+        full_data["color"] = d["color"]
+        full_data["intervals"] = json.loads(d["intervals"]) if d.get("intervals") else []
+        result.append(full_data)
+    return result
+
+
+def save_edit_instruction(inst: dict) -> None:
+    """Save or replace an edit instruction."""
+    meeting_id = inst["meeting_id"]
+    if not get_transcript(meeting_id):
+        save_transcript(Transcript(meeting_id=meeting_id, segments=[]))
+
+    with _get_conn() as conn:
+
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO edit_instructions
+                (id, item_id, meeting_id, effect, target_entity, start_sec, end_sec,
+                 params, confidence, reason, ambiguous, candidate_intervals, status,
+                 filter_string, preview_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                inst["id"],
+                inst["item_id"],
+                inst["meeting_id"],
+                inst["effect"],
+                inst.get("target_entity"),
+                inst["start_sec"],
+                inst["end_sec"],
+                json.dumps(inst.get("params", {})),
+                inst.get("confidence", 1.0),
+                inst.get("reason"),
+                1 if inst.get("ambiguous") else 0,
+                json.dumps(inst.get("candidate_intervals", [])),
+                inst.get("status", "pending"),
+                inst.get("filter_string"),
+                inst.get("preview_path"),
+                inst.get("created_at", _time.time()),
+            ),
+        )
+
+
+def get_edit_instructions(meeting_id: str) -> list[dict]:
+    """Get all edit instructions for a meeting."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM edit_instructions
+            WHERE meeting_id = ?
+            ORDER BY start_sec
+            """,
+            (meeting_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["params"] = json.loads(d["params"]) if d.get("params") else {}
+        d["candidate_intervals"] = (
+            json.loads(d["candidate_intervals"]) if d.get("candidate_intervals") else []
+        )
+        d["ambiguous"] = bool(d.get("ambiguous"))
+        result.append(d)
+    return result
+
+
+def get_edit_instruction(inst_id: str) -> dict | None:
+    """Get a single edit instruction by id."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM edit_instructions WHERE id = ?", (inst_id,)
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["params"] = json.loads(d["params"]) if d.get("params") else {}
+    d["candidate_intervals"] = (
+        json.loads(d["candidate_intervals"]) if d.get("candidate_intervals") else []
+    )
+    d["ambiguous"] = bool(d.get("ambiguous"))
+    return d
+
+
+def update_edit_instruction(inst_id: str, patch: dict) -> dict | None:
+    """Update fields of an edit instruction."""
+    inst = get_edit_instruction(inst_id)
+    if not inst:
+        return None
+    inst.update(patch)
+    save_edit_instruction(inst)
+    return get_edit_instruction(inst_id)
+

@@ -36,19 +36,43 @@ python scripts/register_webhook.py
 python scripts/simulate_webhook.py
 ```
 
+## Vision Pass & Edit Effects (Phase 3)
+
+Frameline converts video frames into rich text context using local vision models (`minicpm-v4.5:8b` via Ollama) and generates structured edit instructions using `qwen2.5`:
+
+- **Vision Pass**: Samples frames every 2 seconds, deduplicates near-identical scenes, and runs MiniCPM-V with a 0.6s soft thinking budget.
+- **Video Context & Entity Index**: Builds scene timelines and tracks entity appearances (e.g. `red car: 0:12-0:18`).
+- **Edit Effects Engine**: Maps feedback items to closed effect vocabulary (`color_pop`, `zoom_in`, `saturation`, `volume`, etc.) with safe, code-compiled `ffmpeg` filter strings.
+- **Side-by-Side Preview**: Renders 480p split-screen before/after clips (`data/previews/`).
+- **DaVinci Resolve Markers**: Exports approved edit effects directly into Resolve marker notes (e.g. `[COLOR POP] red car 0:12-0:18`).
+
+### Helper Scripts
+
+```bash
+# Pull required text & vision models via Ollama
+python scripts/pull_models.py
+
+# Benchmark vision pass latency & frames/sec throughput
+python scripts/bench_vision.py <path_to_video.mp4>
+
+# Run evaluation harness (hit rate, accuracy, latency)
+python eval/eval_edit_effects.py
+```
+
 ## Architecture
 
 See [CONTEXT.md](CONTEXT.md) for full spec, team ownership, and API contracts.
 
 ```
-Meetily webhook → verify HMAC → fetch transcript → Ollama LLM → anchor to timecode
-  → SQLite → Review UI → approved items → EDL / CSV
+Meetily webhook → verify HMAC → fetch transcript → Ollama LLM → MiniCPM-V Vision Pass
+  → Video Context & Entity Index → Qwen Edit Instructions → Side-by-Side Preview → EDL / CSV Export
 ```
 
 ## Ownership
 
 | Person | Files |
 |---|---|
-| Sreedhar | models, config, store, review API, entire frontend, Context.md |
+| Sreedhar | models, config, store, review API, video indexer, vision pass, video context, edit instructions, preview renderer, entire frontend, Context.md |
 | Karthik | meetily_client, ingest, export routers, exporters, scripts |
 | Sivapriyan | llm, extraction, anchoring, pipeline, redaction |
+

@@ -47,11 +47,13 @@ CLIP_DEVICE: str = os.getenv("CLIP_DEVICE", "cpu")  # "cpu" or "cuda"
 VIDEO_DATA_DIR: str = os.getenv("VIDEO_DATA_DIR", "data/videos")
 
 # ---------------------------------------------------------------------------
-# Hybrid grounding weights (Phase 3)
+# Vision Context & MiniCPM-V (Phase 3)
 # ---------------------------------------------------------------------------
-# W_TIME is intentionally low; only applies when sync_offset has been calibrated
-GROUNDING_W_CLIP: float = float(os.getenv("GROUNDING_W_CLIP", "0.65"))
-GROUNDING_W_TIME: float = float(os.getenv("GROUNDING_W_TIME", "0.10"))
-GROUNDING_W_LLM: float = float(os.getenv("GROUNDING_W_LLM", "0.25"))
-GROUNDING_TIME_WINDOW_SEC: float = float(os.getenv("GROUNDING_TIME_WINDOW_SEC", "30.0"))
-GROUNDING_MIN_SCORE: float = float(os.getenv("GROUNDING_MIN_SCORE", "0.35"))
+VISION_CONTEXT_ENABLED: bool = os.getenv("VISION_CONTEXT_ENABLED", "1") == "1"
+MOCK_VISION_LLM: bool = os.getenv("MOCK_VISION_LLM", "0") == "1"
+VISION_MODEL: str = os.getenv("VISION_MODEL", "minicpm-v4.5:8b")
+VISION_FRAME_INTERVAL_SEC: float = float(os.getenv("VISION_FRAME_INTERVAL_SEC", "2.0"))
+VISION_FRAME_MAX_EDGE: int = int(os.getenv("VISION_FRAME_MAX_EDGE", "768"))
+VISION_THINK_BUDGET_SEC: float = float(os.getenv("VISION_THINK_BUDGET_SEC", "0.6"))
+VISION_DEDUP_THRESHOLD: float = float(os.getenv("VISION_DEDUP_THRESHOLD", "5.0"))
+

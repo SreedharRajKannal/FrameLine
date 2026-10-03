@@ -1,0 +1,80 @@
+{
+  "video_id": "demo_video_glowskin",
+  "entities": [
+    {
+      "key": "red car",
+      "intervals": [
+        {"start_sec": 12.0, "end_sec": 18.0},
+        {"start_sec": 40.0, "end_sec": 43.0}
+      ]
+    },
+    {
+      "key": "brand logo",
+      "intervals": [
+        {"start_sec": 0.0, "end_sec": 10.0}
+      ]
+    },
+    {
+      "key": "glass bottle",
+      "intervals": [
+        {"start_sec": 20.0, "end_sec": 35.0}
+      ]
+    }
+  ],
+  "sample_comments": [
+    {
+      "id": "c1",
+      "quote": "make the color pop when the red car comes",
+      "note": "Boost saturation and contrast for red car scene",
+      "expected_effect": "color_pop",
+      "expected_target": "red car",
+      "expected_start_sec": 12.0,
+      "expected_end_sec": 18.0
+    },
+    {
+      "id": "c2",
+      "quote": "zoom in a bit on the glass bottle in the middle",
+      "note": "Zoom in on product bottle",
+      "expected_effect": "zoom_in",
+      "expected_target": "glass bottle",
+      "expected_start_sec": 20.0,
+      "expected_end_sec": 35.0
+    },
+    {
+      "id": "c3",
+      "quote": "make the opening logo look warmer",
+      "note": "Apply warm color tone to brand logo",
+      "expected_effect": "warm",
+      "expected_target": "brand logo",
+      "expected_start_sec": 0.0,
+      "expected_end_sec": 10.0
+    },
+    {
+      "id": "c4",
+      "quote": "desaturate the background when the car speeds past",
+      "note": "Desaturate background during car drive",
+      "expected_effect": "desaturate",
+      "expected_target": "red car",
+      "expected_start_sec": 12.0,
+      "expected_end_sec": 18.0
+    },
+    {
+      "id": "c5",
+      "quote": "fade out the sound at the end",
+      "note": "Fade out audio at timeline end",
+      "expected_effect": "fade_out",
+      "expected_target": null,
+      "expected_start_sec": 55.0,
+      "expected_end_sec": 60.0
+    },
+    {
+      "id": "c6",
+      "quote": "make the bottle shot brighter",
+      "note": "Increase brightness for serum bottle",
+      "expected_effect": "brightness",
+      "expected_target": "glass bottle",
+      "expected_start_sec": 20.0,
+      "expected_end_sec": 35.0
+    }
+  ]
+}
