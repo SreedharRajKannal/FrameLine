@@ -1,10 +1,14 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { patchEditInstruction, renderEditPreview } from '../api'
 
 export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
   const [inst, setInst] = useState(instruction)
   const [rendering, setRendering] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
+
+  useEffect(() => {
+    setInst(instruction)
+  }, [instruction])
 
   async function handleStatusChange(newStatus) {
     try {
@@ -46,36 +50,37 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
   return (
     <div className={`edit-instruction-card status-${inst.status}`}>
       <div className="card-header">
-        <span className="effect-badge">{inst.effect.toUpperCase().replace('_', ' ')}</span>
-        {inst.target_entity && (
-          <span className="target-chip">🎯 {inst.target_entity}</span>
-        )}
-        <span className="confidence-pill">
-          {(inst.confidence * 100).toFixed(0)}% conf
-        </span>
+        <div className="card-header-main">
+          <span className="effect-badge">{inst.effect.toUpperCase().replaceAll('_', ' ')}</span>
+          {inst.is_global && <span className="global-instruction-badge">GLOBAL · START</span>}
+          {inst.target_entity && (
+            <span className="target-chip">Target: {inst.target_entity}</span>
+          )}
+        </div>
+        <span className="confidence-pill">{(inst.confidence * 100).toFixed(0)}% confidence</span>
       </div>
 
       <div className="card-body">
-        <p className="reason-text">{inst.reason}</p>
+        <p className="reason-text">{inst.reason || 'Proposed from transcript feedback.'}</p>
 
         {/* Time Interval & Filter info */}
         <div className="interval-info">
-          <span>⏱️ Interval: </span>
+          <span>{inst.is_global ? 'Global range: ' : 'Interval: '}</span>
           <button className="btn-link" onClick={() => onSeek && onSeek(inst.start_sec)}>
-            {inst.start_sec.toFixed(1)}s - {inst.end_sec.toFixed(1)}s
+            {inst.is_global ? 'from beginning · ' : ''}{inst.start_sec.toFixed(1)}s - {inst.end_sec.toFixed(1)}s
           </button>
         </div>
 
         {inst.filter_string && (
           <div className="filter-string-code">
-            <code>ffmpeg -vf "{inst.filter_string}"</code>
+            <code title={inst.filter_string}>ffmpeg -vf &quot;{inst.filter_string}&quot;</code>
           </div>
         )}
 
         {/* Ambiguity Picker */}
         {inst.ambiguous && inst.candidate_intervals?.length > 1 && (
           <div className="ambiguity-picker">
-            <span className="picker-label">⚠️ Multiple matches found — select target interval:</span>
+            <span className="picker-label">Multiple matches found. Select the target interval:</span>
             <div className="candidate-list">
               {inst.candidate_intervals.map((iv, idx) => (
                 <button
@@ -97,7 +102,7 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
           onClick={handleRenderPreview}
           disabled={rendering}
         >
-          {rendering ? 'Rendering...' : inst.preview_path ? '▶ Watch Preview' : '🎥 Render Preview'}
+          {rendering ? 'Rendering preview…' : inst.preview_path ? 'Watch Preview' : 'Render Preview'}
         </button>
 
         <div className="btn-group">
@@ -105,13 +110,13 @@ export default function EditInstructionCard({ instruction, onUpdate, onSeek }) {
             className={`btn btn-sm ${inst.status === 'approved' ? 'btn-success' : 'btn-outline'}`}
             onClick={() => handleStatusChange('approved')}
           >
-            ✓ Approve
+            {inst.status === 'approved' ? 'Approved' : 'Approve'}
           </button>
           <button
             className={`btn btn-sm ${inst.status === 'rejected' ? 'btn-danger' : 'btn-outline'}`}
             onClick={() => handleStatusChange('rejected')}
           >
-            ✗ Reject
+            {inst.status === 'rejected' ? 'Rejected' : 'Reject'}
           </button>
         </div>
       </div>

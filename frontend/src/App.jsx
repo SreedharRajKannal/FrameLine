@@ -59,7 +59,7 @@ function ItemTimecode({ item, settings }) {
 // ─────────────────────────────────────────────────────────
 // Single item card
 // ─────────────────────────────────────────────────────────
-function ItemCard({ item, settings, selected, onSelect }) {
+function ItemCard({ item, settings, selected, onSelect, editInstruction }) {
   return (
     <div
       className={[
@@ -86,6 +86,25 @@ function ItemCard({ item, settings, selected, onSelect }) {
       </div>
 
       <div className="item-note">{item.note}</div>
+      {editInstruction && (
+        <div className="item-edit-resolution">
+          <span className="item-edit-resolution-label">Qwen</span>
+          <span>{editInstruction.effect.replaceAll('_', ' ')}</span>
+          {editInstruction.target_entity && <span>Target: {editInstruction.target_entity}</span>}
+          <button
+            className="item-edit-time"
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelect(item)
+            }}
+          >
+            {editInstruction.is_global
+              ? 'Global · from start'
+              : `${editInstruction.start_sec.toFixed(1)}s–${editInstruction.end_sec.toFixed(1)}s`}
+          </button>
+          <span className={`badge badge-status-${editInstruction.status}`}>{editInstruction.status}</span>
+        </div>
+      )}
       <div className="item-quote">{item.quote}</div>
 
       <div className="item-confidence">
@@ -394,9 +413,13 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
   }
 
   const handleEditInstructionUpdated = (updated) => {
-    setEditInstructions(current => current.map(instruction =>
-      instruction.id === updated.id ? updated : instruction
-    ))
+    setEditInstructions(current => [
+      updated,
+      ...current.filter(instruction => instruction.id !== updated.id),
+    ].sort((a, b) => Number(Boolean(b.is_global)) - Number(Boolean(a.is_global)) || a.start_sec - b.start_sec))
+    fetchMeeting(meetingId).then(setData).catch(error => {
+      toast(`Instruction saved, but items could not refresh: ${error.message}`, 'error')
+    })
   }
 
   const handleSelectItem = (item) => {
@@ -455,8 +478,10 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
 
   const settings = data.settings || {}
   let items = data.items || []
-  // Sort needs_review first
+  const instructionsByItem = Object.fromEntries(editInstructions.map(instruction => [instruction.item_id, instruction]))
+  // Put global instructions at the beginning, then surface items needing review.
   items = [...items].sort((a, b) => {
+    if (a.is_global !== b.is_global) return a.is_global ? -1 : 1
     if (a.needs_review && !b.needs_review) return -1
     if (!a.needs_review && b.needs_review) return 1
     return 0
@@ -525,7 +550,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
               No edit instructions yet. Generate them from the transcript feedback.
               {data.video_id ? ' The linked video context and entity intervals will be included in Qwen’s prompt.' : ' Link a video to include visual context.'}
             </div>
-          ) : editInstructions.map(instruction => (
+          ) : [...editInstructions].sort((a, b) => Number(Boolean(b.is_global)) - Number(Boolean(a.is_global)) || a.start_sec - b.start_sec).map(instruction => (
             <EditInstructionCard
               key={instruction.id}
               instruction={instruction}
@@ -620,6 +645,7 @@ function MeetingPage({ meetingId, toast, onNotFound }) {
                     item={item}
                     settings={settings}
                     selected={selectedItem?.id === item.id}
+                    editInstruction={instructionsByItem[item.id]}
                     onSelect={handleSelectItem}
                   />
                 ))

@@ -160,6 +160,68 @@ def test_qwen_edit_generation_uses_context_and_keeps_explicit_time(monkeypatch):
     assert generated[0]["end_sec"] == 10.0
     assert generated[0]["target_entity"] == "bottle"
 
+    patch_response = client.patch(
+        f"/api/edits/{generated[0]['id']}",
+        json={"status": "approved", "start_sec": 7.0, "end_sec": 10.0},
+    )
+    assert patch_response.status_code == 200
+    updated_meeting = client.get(f"/api/meetings/{meeting_id}").json()
+    updated_item = updated_meeting["items"][0]
+    assert updated_item["status"] == "approved"
+    assert updated_item["needs_review"] is False
+    assert updated_item["anchor_sec"] == 7.0
+
+
+def test_global_edit_instruction_is_persisted_at_video_start(monkeypatch):
+    from backend.app import config, edit_instructions, vision_pass
+
+    meeting_id = "meet-global-edit-start"
+    video_id = "video-global-edit-start"
+    store.save_video(Video(
+        video_id=video_id,
+        filename="review.mp4",
+        path="review.mp4",
+        duration_sec=42.0,
+    ))
+    store.save_transcript(Transcript(meeting_id=meeting_id, segments=[]))
+    store.link_video_to_meeting(meeting_id, video_id)
+    store.save_items(meeting_id, [FeedbackItem(
+        id="global-contrast-item",
+        meeting_id=meeting_id,
+        quote="Increase the contrast of the overall video.",
+        note="Increase contrast throughout the video.",
+        type="change",
+        category="color",
+        segment_start_sec=14.0,
+        is_global=True,
+    )])
+    monkeypatch.setattr(config, "MOCK_LLM", False)
+    monkeypatch.setattr(config, "MOCK_VISION_LLM", False)
+    monkeypatch.setattr(edit_instructions, "get_relevant_context", lambda **kwargs: "Video context")
+    monkeypatch.setattr(vision_pass, "unload_ollama_model", lambda model_name: None)
+    monkeypatch.setattr(edit_instructions, "call_llm_json", lambda *args, **kwargs: {
+        "effect": "contrast",
+        "target_entity": "background",
+        "start_sec": 14.0,
+        "end_sec": 20.0,
+        "params": {"factor": 1.2},
+        "confidence": 0.9,
+        "reason": "Increase contrast globally.",
+    })
+
+    response = client.post(
+        f"/api/meetings/{meeting_id}/edits/generate",
+        json={"video_id": video_id},
+    )
+
+    assert response.status_code == 200
+    instruction = response.json()[0]
+    assert instruction["is_global"] is True
+    assert instruction["target_entity"] is None
+    assert instruction["start_sec"] == 0.0
+    assert instruction["end_sec"] == 42.0
+    assert store.get_edit_instructions(meeting_id)[0]["is_global"] is True
+
 
 def test_qwen_empty_result_is_returned_as_visible_api_error(monkeypatch):
     from backend.app.routers import vision
@@ -181,3 +243,45 @@ def test_qwen_empty_result_is_returned_as_visible_api_error(monkeypatch):
 
     assert response.status_code == 502
     assert "Qwen returned no edit instructions" in response.json()["detail"]
+
+
+def test_edit_instruction_inherits_existing_item_approval(monkeypatch):
+    from backend.app import config, edit_instructions, vision_pass
+
+    meeting_id = "meet-inherit-edit-approval"
+    video_id = "video-inherit-edit-approval"
+    store.save_transcript(Transcript(meeting_id=meeting_id, segments=[]))
+    store.save_video(Video(video_id=video_id, filename="review.mp4", path="review.mp4", duration_sec=20.0))
+    store.link_video_to_meeting(meeting_id, video_id)
+    store.save_items(meeting_id, [FeedbackItem(
+        id="already-approved-feedback",
+        meeting_id=meeting_id,
+        quote="Slow the bottle pickup.",
+        note="Slow the bottle pickup.",
+        type="change",
+        category="pacing",
+        segment_start_sec=4.0,
+        status="approved",
+        needs_review=False,
+    )])
+    monkeypatch.setattr(config, "MOCK_LLM", False)
+    monkeypatch.setattr(config, "MOCK_VISION_LLM", False)
+    monkeypatch.setattr(edit_instructions, "get_relevant_context", lambda **kwargs: "Bottle is picked up at 4s.")
+    monkeypatch.setattr(vision_pass, "unload_ollama_model", lambda model_name: None)
+    monkeypatch.setattr(edit_instructions, "call_llm_json", lambda *args, **kwargs: {
+        "effect": "speed",
+        "target_entity": "bottle",
+        "start_sec": 4.0,
+        "end_sec": 8.0,
+        "params": {"factor": 0.7},
+        "confidence": 0.9,
+        "reason": "Slow the bottle pickup.",
+    })
+
+    response = client.post(
+        f"/api/meetings/{meeting_id}/edits/generate",
+        json={"video_id": video_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["status"] == "approved"

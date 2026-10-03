@@ -169,6 +169,7 @@ def init_db() -> None:
                 meeting_id          TEXT NOT NULL,
                 effect              TEXT NOT NULL,
                 target_entity       TEXT,
+                is_global           INTEGER DEFAULT 0,
                 start_sec           REAL NOT NULL,
                 end_sec             REAL NOT NULL,
                 params              TEXT NOT NULL,
@@ -190,6 +191,7 @@ def init_db() -> None:
             "ALTER TABLE meetings ADD COLUMN status TEXT DEFAULT 'completed'",
             "ALTER TABLE meetings ADD COLUMN video_id TEXT",
             "ALTER TABLE detections ADD COLUMN position TEXT",
+            "ALTER TABLE edit_instructions ADD COLUMN is_global INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(alter)
@@ -728,10 +730,10 @@ def save_edit_instruction(inst: dict) -> None:
         conn.execute(
             """
             INSERT OR REPLACE INTO edit_instructions
-                (id, item_id, meeting_id, effect, target_entity, start_sec, end_sec,
+                (id, item_id, meeting_id, effect, target_entity, is_global, start_sec, end_sec,
                  params, confidence, reason, ambiguous, candidate_intervals, status,
                  filter_string, preview_path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 inst["id"],
@@ -739,6 +741,7 @@ def save_edit_instruction(inst: dict) -> None:
                 inst["meeting_id"],
                 inst["effect"],
                 inst.get("target_entity"),
+                1 if inst.get("is_global") else 0,
                 inst["start_sec"],
                 inst["end_sec"],
                 json.dumps(inst.get("params", {})),
@@ -773,6 +776,7 @@ def get_edit_instructions(meeting_id: str) -> list[dict]:
             json.loads(d["candidate_intervals"]) if d.get("candidate_intervals") else []
         )
         d["ambiguous"] = bool(d.get("ambiguous"))
+        d["is_global"] = bool(d.get("is_global"))
         result.append(d)
     return result
 
@@ -791,6 +795,7 @@ def get_edit_instruction(inst_id: str) -> dict | None:
         json.loads(d["candidate_intervals"]) if d.get("candidate_intervals") else []
     )
     d["ambiguous"] = bool(d.get("ambiguous"))
+    d["is_global"] = bool(d.get("is_global"))
     return d
 
 

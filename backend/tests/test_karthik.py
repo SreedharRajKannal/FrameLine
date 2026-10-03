@@ -138,15 +138,46 @@ class TestEDL:
 
         # Check colors in comment lines
         comment_lines = [l for l in lines if l.startswith("|C:")]
-        assert "ResolveColorRed" in comment_lines[0]   # change = Red
-        assert "ResolveColorRed" in comment_lines[1]    # change = Red (global)
+        assert "ResolveColorRed" in comment_lines[0]    # global change = Red
+        assert "ResolveColorRed" in comment_lines[1]   # timed change = Red
         assert "ResolveColorGreen" in comment_lines[2]  # approval = Green
 
         # Check global item has [GLOBAL] in marker name
-        assert "[GLOBAL]" in comment_lines[1]
+        assert "[GLOBAL]" in comment_lines[0]
 
-        # Check marker duration
-        assert "|D:1" in comment_lines[0]
+    def test_global_marker_is_first_in_edl(self):
+        from backend.app.exporters.edl import build_edl
+        from backend.app.models import FeedbackItem, ProjectSettings
+
+        global_item = FeedbackItem(
+            id="global-first",
+            meeting_id="global-order",
+            quote="Increase the overall contrast.",
+            note="Increase contrast throughout the video.",
+            type="change",
+            category="color",
+            segment_start_sec=12.0,
+            is_global=True,
+            status="approved",
+        )
+        timed_item = FeedbackItem(
+            id="timed-second",
+            meeting_id="global-order",
+            quote="Zoom in at five seconds.",
+            note="Zoom at five seconds.",
+            type="change",
+            category="edit",
+            segment_start_sec=0.0,
+            anchor_sec=5.0,
+            status="approved",
+        )
+
+        edl = build_edl([timed_item, global_item], ProjectSettings(), "Test")
+        comments = [line for line in edl.splitlines() if line.startswith("|C:")]
+
+        assert "[GLOBAL]" in comments[0]
+        assert "[GLOBAL]" not in comments[1]
+        assert "|D:1" in comments[0]
 
     def test_build_edl_filters_non_approved(self):
         from backend.app.exporters.edl import build_edl

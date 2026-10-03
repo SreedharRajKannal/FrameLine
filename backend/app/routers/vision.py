@@ -192,14 +192,27 @@ class EditPatchRequest(BaseModel):
     start_sec: float | None = None
     end_sec: float | None = None
     params: dict[str, float] | None = None
+    ambiguous: bool | None = None
 
 
 @router.patch("/edits/{instruction_id}")
 def patch_edit_instruction(instruction_id: str, patch: EditPatchRequest):
-    """Patch edit instruction status, parameters, or time window."""
-    updated = store.update_edit_instruction(instruction_id, patch.model_dump(exclude_unset=True))
+    """Patch an instruction and synchronize its decision/time to the source item."""
+    changes = patch.model_dump(exclude_unset=True)
+    updated = store.update_edit_instruction(instruction_id, changes)
     if not updated:
         raise HTTPException(status_code=404, detail="Edit instruction not found")
+    item_patch = {}
+    if "status" in changes and changes["status"] in ("approved", "rejected"):
+        item_patch.update(status=changes["status"], needs_review=False)
+    if "start_sec" in changes and not updated.get("is_global"):
+        item_patch.update(
+            anchor_sec=changes["start_sec"],
+            anchor_source="vision",
+            is_global=False,
+        )
+    if item_patch:
+        store.update_item(updated["item_id"], item_patch)
     return updated
 
 

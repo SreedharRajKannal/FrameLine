@@ -572,6 +572,40 @@ input, textarea, select { font-family: inherit; }
   line-height: 1.4;
 }
 
+.item-edit-resolution {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: rgba(124, 107, 252, 0.08);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.item-edit-resolution-label {
+  color: var(--accent-hover);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.item-edit-time {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-hover);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.item-edit-time:hover {
+  text-decoration: underline;
+}
+
 .item-confidence {
   font-size: 10px;
   color: var(--text-muted);
@@ -1034,12 +1068,13 @@ input, textarea, select { font-family: inherit; }
 .edit-instruction-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 12px;
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  margin: 10px 0;
+  min-width: 0;
 }
 
 .edit-instruction-card.status-approved {
@@ -1054,6 +1089,112 @@ input, textarea, select { font-family: inherit; }
   border-radius: 4px;
   font-size: 11px;
   font-weight: 700;
+}
+
+.edit-instruction-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.card-header-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.global-instruction-badge {
+  color: var(--accent-hover);
+  background: var(--accent-dim);
+  border: 1px solid rgba(124, 107, 252, 0.35);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.confidence-pill {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.edit-instruction-card .card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reason-text {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.interval-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.interval-info .btn-link {
+  overflow-wrap: anywhere;
+}
+
+.filter-string-code {
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  overflow-x: auto;
+}
+
+.filter-string-code code {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ambiguity-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+.picker-label {
+  color: var(--priority-high);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.edit-instruction-card .card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .target-chip {

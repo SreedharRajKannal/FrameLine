@@ -45,6 +45,7 @@ class EditInstruction(BaseModel):
     meeting_id: str
     effect: str
     target_entity: str | None = None
+    is_global: bool = False
     start_sec: float
     end_sec: float
     params: dict[str, float] = Field(default_factory=dict)
@@ -193,6 +194,7 @@ def generate_edit_instructions(
                     meeting_id=meeting_id,
                     effect="color_pop",
                     target_entity="red car" if video_id else None,
+                    is_global=item.is_global,
                     start_sec=start_sec,
                     end_sec=end_sec,
                     params={"saturation": 1.4, "contrast": 1.25},
@@ -200,6 +202,7 @@ def generate_edit_instructions(
                     reason="Client asked to boost color saturation." + (" (anchored to red car)" if video_id else " (transcript anchored)"),
                     ambiguous=ambiguous,
                     candidate_intervals=intervals,
+                    status=item.status,
                     filter_string=compile_ffmpeg_filter("color_pop", {"saturation": 1.4, "contrast": 1.25}),
                 )
                 inst_dict = inst.model_dump()
@@ -246,12 +249,19 @@ def generate_edit_instructions(
             effect = data.get("effect") if isinstance(data, dict) else None
             has_effect = data.get("has_effect", effect in CLOSED_EFFECTS) if isinstance(data, dict) else False
             if isinstance(data, dict) and has_effect and effect in CLOSED_EFFECTS:
-                target = data.get("target_entity")
+                is_global = item.is_global
+                target = None if is_global else data.get("target_entity")
                 intervals = _find_entity_intervals(target, video_id) if (target and video_id) else []
 
                 start_sec = data.get("start_sec", item.anchor_sec or item.segment_start_sec or 0.0)
                 end_sec = data.get("end_sec", start_sec + 5.0)
-                if intervals:
+                if is_global:
+                    meeting = store.get_meeting(meeting_id)
+                    linked_video_id = video_id or (meeting.get("video_id") if meeting else None)
+                    video = store.get_video(linked_video_id) if linked_video_id else None
+                    start_sec = 0.0
+                    end_sec = video.duration_sec if video and video.duration_sec else max(float(end_sec), 1.0)
+                elif intervals:
                     hint_sec = item.spoken_timecode_sec if item.spoken_timecode_sec is not None else item.anchor_sec
                     selected_interval = min(
                         intervals,
@@ -278,6 +288,7 @@ def generate_edit_instructions(
                     meeting_id=meeting_id,
                     effect=effect,
                     target_entity=target,
+                    is_global=is_global,
                     start_sec=start_sec,
                     end_sec=end_sec,
                     params=data.get("params", {}),
@@ -285,6 +296,7 @@ def generate_edit_instructions(
                     reason=data.get("reason", "Generated from feedback note."),
                     ambiguous=len(intervals) > 1,
                     candidate_intervals=intervals,
+                    status=item.status,
                     filter_string=filter_str,
                 )
                 inst_dict = inst.model_dump()

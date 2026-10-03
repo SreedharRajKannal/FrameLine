@@ -50,6 +50,7 @@ def build_edl(
         item for item in items
         if item.status == "approved" and not item.withdrawn
     ]
+    exportable.sort(key=lambda item: (not item.is_global, item.anchor_sec or 0.0))
 
     # EDL header
     edl_title = f"{title} - {version}" if title else version
